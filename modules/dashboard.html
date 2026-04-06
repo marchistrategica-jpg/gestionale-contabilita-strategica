@@ -1,0 +1,79 @@
+<!-- ============================================================
+     MODULO: DASHBOARD
+     File: modules/dashboard.html
+     JS:   js/modules/dashboard.js (caricato automaticamente dal router)
+     ============================================================ -->
+
+<!-- KPI Cards -->
+<div class="kpi-grid" id="kpi-grid">
+  <div class="kpi-card primary">
+    <div class="kpi-label">Fatturato YTD</div>
+    <div class="kpi-value" id="kpi-fatturato">—</div>
+    <div class="kpi-sub">Anno corrente</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Incassi del mese</div>
+    <div class="kpi-value" id="kpi-incassi">—</div>
+    <div class="kpi-sub" id="kpi-incassi-sub">Mese corrente</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-label">Pagamenti del mese</div>
+    <div class="kpi-value" id="kpi-pagamenti">—</div>
+    <div class="kpi-sub">Uscite mese corrente</div>
+  </div>
+  <div class="kpi-card secondary">
+    <div class="kpi-label">Contratti attivi</div>
+    <div class="kpi-value" id="kpi-contratti">—</div>
+    <div class="kpi-sub">In corso</div>
+  </div>
+  <div class="kpi-card amber">
+    <div class="kpi-label">Saldo conti</div>
+    <div class="kpi-value" id="kpi-saldo">—</div>
+    <div class="kpi-sub">Totale liquidità</div>
+  </div>
+</div>
+
+<!-- Riga tabelle recenti -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+  <!-- Ultimi movimenti -->
+  <div class="table-wrap">
+    <div class="table-head">
+      <span class="card-title">Ultimi movimenti</span>
+      <a href="#incassi" class="btn btn-secondary btn-sm">Vedi tutti</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Descrizione</th>
+          <th class="text-right">Importo</th>
+        </tr>
+      </thead>
+      <tbody id="tb-movimenti">
+        <tr><td colspan="3" class="text-center text-muted" style="padding:24px">Caricamento...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Contratti in scadenza -->
+  <div class="table-wrap">
+    <div class="table-head">
+      <span class="card-title">Contratti in scadenza</span>
+      <a href="#contratti" class="btn btn-secondary btn-sm">Vedi tutti</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Cliente</th>
+          <th>Scadenza</th>
+          <th>Stato</th>
+        </tr>
+      </thead>
+      <tbody id="tb-contratti">
+        <tr><td colspan="3" class="text-center text-muted" style="padding:24px">Caricamento...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
