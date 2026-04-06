@@ -77,11 +77,14 @@ input, select, textarea { font-family: inherit; }
   overflow-x: hidden;
 }
 
-.sb-brand {
-  padding: 16px 16px 14px;
+..sb-brand {
+  height: var(--tbh);
+  padding: 0 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  background: #fff;   /* bianco puro — così il logo JPG a sfondo bianco è invisibile */
+  background: #fff;
+  display: flex;
+  align-items: center;
 }
 
 /* Logo immagine */
