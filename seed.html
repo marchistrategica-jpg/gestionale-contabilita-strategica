@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Seed Database — Strategica MNS</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <style>
+    body { font-family: monospace; background: #0f507b; color: #fff; padding: 40px; max-width: 700px; margin: auto; }
+    h1 { color: #e6165c; font-size: 1.4rem; margin-bottom: 6px; }
+    p  { color: #8fa3b8; margin-bottom: 30px; }
+    #log { background: #1b3050; border-radius: 8px; padding: 20px; line-height: 1.9; }
+    .ok  { color: #10b981; }
+    .err { color: #f87171; }
+    .inf { color: #fbbf24; }
+    button { background: #e6165c; color: #fff; border: none; border-radius: 8px;
+             padding: 14px 32px; font-size: 1rem; cursor: pointer; margin-bottom: 20px; }
+    button:hover { background: #c4104d; }
+    button:disabled { background: #4a6380; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<h1>🌱 Seed Database — Strategica MNS</h1>
+<p>Questo file va aperto UNA SOLA VOLTA nel browser dopo aver configurato Firebase.<br>
+   Popola automaticamente tutte le collezioni con dati di esempio realistici.</p>
+
+<button id="btnSeed" onclick="runSeed()">▶ Avvia Seed</button>
+
+<div id="log">Premi il bottone per iniziare...</div>
+
+<script>
+// ════════════ INCOLLA QUI LE TUE CREDENZIALI FIREBASE ════════════
+const firebaseConfig = {
+  apiKey:            "INCOLLA_QUI_IL_TUO_apiKey",
+  authDomain:        "INCOLLA_QUI_IL_TUO_authDomain",
+  projectId:         "INCOLLA_QUI_IL_TUO_projectId",
+  storageBucket:     "INCOLLA_QUI_IL_TUO_storageBucket",
+  messagingSenderId: "INCOLLA_QUI_IL_TUO_messagingSenderId",
+  appId:             "INCOLLA_QUI_IL_TUO_appId"
+};
+// ═════════════════════════════════════════════════════════════════
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Utility: converte "YYYY-MM-DD" in Firestore Timestamp
+const ts = d => firebase.firestore.Timestamp.fromDate(new Date(d + 'T12:00:00'));
+const now = firebase.firestore.Timestamp.now();
+
+// Utility: scrivi nel log a schermo
+const log = document.getElementById('log');
+function msg(text, tipo = 'ok') {
+  const riga = document.createElement('div');
+  riga.className = tipo;
+  riga.textContent = text;
+  log.appendChild(riga);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ════════════════════════════════════════════════════════════
+// DATI DI SEED
+// ════════════════════════════════════════════════════════════
+
+const SOCI = [
+  { id: 'socio_marco',   nome: 'Marco Nieddu',    quota_percentuale: 50, email: 'marco@strategicamns.it' },
+  { id: 'socio_simone',  nome: 'Simone Ferraris',  quota_percentuale: 30, email: 'simone@strategicamns.it' },
+  { id: 'socio_alessia', nome: 'Alessia Carta',    quota_percentuale: 20, email: 'alessia@strategicamns.it' },
+];
+
+const CONTI = [
+  { id: 'conto_credem',  nome: 'Credem Business',  iban: 'IT60 X 03032 01600 010000022801', saldo_iniziale: 28500.00, banca: 'Credem Banca' },
+  { id: 'conto_revolut', nome: 'Revolut Business', iban: 'IT00 X 00000 00000 000000001234', saldo_iniziale: 5200.00,  banca: 'Revolut' },
+];
+
+const CONTRATTI = [
+  {
+    id: 'c2024001',
+    numero: '2024-001',
+    cliente: 'Comune di Cagliari',
+    data_inizio: ts('2024-01-15'),
+    data_fine:   ts('2024-12-31'),
+    valore: 48000.00,
+    stato: 'concluso',
+    note: 'Consulenza comunicazione istituzionale annuale',
+    createdAt: now,
+  },
+  {
+    id: 'c2024002',
+    numero: '2024-002',
+    cliente: 'Sardinia Resort S.r.l.',
+    data_inizio: ts('2024-03-01'),
+    data_fine:   ts('2025-02-28'),
+    valore: 22000.00,
+    stato: 'attivo',
+    note: 'Piano marketing e gestione social media',
+    createdAt: now,
+  },
+  {
+    id: 'c2024003',
+    numero: '2024-003',
+    cliente: 'Studio Legale Mura & Associati',
+    data_inizio: ts('2024-06-01'),
+    data_fine:   ts('2024-11-30'),
+    valore: 9600.00,
+    stato: 'concluso',
+    note: 'Progetto rebranding identità visiva',
+    createdAt: now,
+  },
+  {
+    id: 'c2025001',
+    numero: '2025-001',
+    cliente: 'Arborea Latte S.c.a.',
+    data_inizio: ts('2025-01-01'),
+    data_fine:   ts('2025-12-31'),
+    valore: 36000.00,
+    stato: 'attivo',
+    note: 'Retainer mensile comunicazione e PR',
+    createdAt: now,
+  },
+  {
+    id: 'c2025002',
+    numero: '2025-002',
+    cliente: 'Hotel Flamingo Spa',
+    data_inizio: ts('2025-02-01'),
+    data_fine:   ts('2025-04-30'),
+    valore: 7800.00,
+    stato: 'attivo',
+    note: 'Campagna ADV stagione primavera/estate',
+    createdAt: now,
+  },
+  {
+    id: 'c2025003',
+    numero: '2025-003',
+    cliente: 'Regione Sardegna — Assessorato',
+    data_inizio: ts('2025-03-15'),
+    data_fine:   ts('2026-03-14'),
+    valore: 95000.00,
+    stato: 'attivo',
+    note: 'Progetto comunicazione fondi PNRR',
+    createdAt: now,
+  },
+  {
+    id: 'c2025004',
+    numero: '2025-004',
+    cliente: 'Cantina Santadi',
+    data_inizio: ts('2025-04-01'),
+    data_fine:   ts('2025-06-30'),
+    valore: 5500.00,
+    stato: 'sospeso',
+    note: 'Lancio linea premium — in attesa approvazione budget',
+    createdAt: now,
+  },
+];
+
+const MOVIMENTI = [
+  // Incassi 2025
+  { id: 'm001', tipo: 'incasso',   importo: 3000.00, data: ts('2025-01-10'), descrizione: 'Acconto contratto Arborea Latte — Gen',   categoria: 'Contratto',   conto: 'Credem Business', iva_rate: 22, iva_importo: 660.00,  contratto_ref: 'c2025001' },
+  { id: 'm002', tipo: 'incasso',   importo: 3000.00, data: ts('2025-02-10'), descrizione: 'Acconto contratto Arborea Latte — Feb',   categoria: 'Contratto',   conto: 'Credem Business', iva_rate: 22, iva_importo: 660.00,  contratto_ref: 'c2025001' },
+  { id: 'm003', tipo: 'incasso',   importo: 7800.00, data: ts('2025-02-15'), descrizione: 'Saldo contratto Hotel Flamingo — totale', categoria: 'Contratto',   conto: 'Revolut Business',iva_rate: 22, iva_importo: 1716.00, contratto_ref: 'c2025002' },
+  { id: 'm004', tipo: 'incasso',   importo: 3000.00, data: ts('2025-03-10'), descrizione: 'Acconto contratto Arborea Latte — Mar',   categoria: 'Contratto',   conto: 'Credem Business', iva_rate: 22, iva_importo: 660.00,  contratto_ref: 'c2025001' },
+  { id: 'm005', tipo: 'incasso',   importo: 19000.00,data: ts('2025-03-20'), descrizione: 'Acconto Regione Sardegna — 20%',          categoria: 'Contratto',   conto: 'Credem Business', iva_rate: 22, iva_importo: 4180.00, contratto_ref: 'c2025003' },
+  { id: 'm006', tipo: 'incasso',   importo: 3000.00, data: ts('2025-04-10'), descrizione: 'Acconto contratto Arborea Latte — Apr',   categoria: 'Contratto',   conto: 'Credem Business', iva_rate: 22, iva_importo: 660.00,  contratto_ref: 'c2025001' },
+  { id: 'm007', tipo: 'incasso',   importo: 1200.00, data: ts('2025-04-18'), descrizione: 'Consulenza extra Sardinia Resort',         categoria: 'Consulenza',  conto: 'Revolut Business',iva_rate: 22, iva_importo: 264.00,  contratto_ref: 'c2024002' },
+
+  // Pagamenti 2025
+  { id: 'm101', tipo: 'pagamento', importo: 1800.00, data: ts('2025-01-05'), descrizione: 'Affitto ufficio — Gennaio',               categoria: 'Affitto',     conto: 'Credem Business', iva_rate: 22, iva_importo: 396.00,  contratto_ref: null },
+  { id: 'm102', tipo: 'pagamento', importo: 450.00,  data: ts('2025-01-15'), descrizione: 'Abbonamenti software (Adobe CC, Slack)',   categoria: 'Software',    conto: 'Revolut Business',iva_rate: 22, iva_importo: 99.00,   contratto_ref: null },
+  { id: 'm103', tipo: 'pagamento', importo: 620.00,  data: ts('2025-01-28'), descrizione: 'Stipendio collaboratore Ing. Pucci',      categoria: 'Personale',   conto: 'Credem Business', iva_rate: 0,  iva_importo: 0,       contratto_ref: null },
+  { id: 'm104', tipo: 'pagamento', importo: 1800.00, data: ts('2025-02-05'), descrizione: 'Affitto ufficio — Febbraio',              categoria: 'Affitto',     conto: 'Credem Business', iva_rate: 22, iva_importo: 396.00,  contratto_ref: null },
+  { id: 'm105', tipo: 'pagamento', importo: 380.00,  data: ts('2025-02-20'), descrizione: 'Meta Ads — campagna Hotel Flamingo',      categoria: 'Pubblicità',  conto: 'Revolut Business',iva_rate: 22, iva_importo: 83.60,   contratto_ref: 'c2025002' },
+  { id: 'm106', tipo: 'pagamento', importo: 1800.00, data: ts('2025-03-05'), descrizione: 'Affitto ufficio — Marzo',                 categoria: 'Affitto',     conto: 'Credem Business', iva_rate: 22, iva_importo: 396.00,  contratto_ref: null },
+  { id: 'm107', tipo: 'pagamento', importo: 850.00,  data: ts('2025-03-25'), descrizione: 'Stampa materiali — brochure Regione',     categoria: 'Fornitori',   conto: 'Credem Business', iva_rate: 22, iva_importo: 187.00,  contratto_ref: 'c2025003' },
+  { id: 'm108', tipo: 'pagamento', importo: 1800.00, data: ts('2025-04-05'), descrizione: 'Affitto ufficio — Aprile',                categoria: 'Affitto',     conto: 'Credem Business', iva_rate: 22, iva_importo: 396.00,  contratto_ref: null },
+  { id: 'm109', tipo: 'pagamento', importo: 450.00,  data: ts('2025-04-15'), descrizione: 'Abbonamenti software — Aprile',           categoria: 'Software',    conto: 'Revolut Business',iva_rate: 22, iva_importo: 99.00,   contratto_ref: null },
+];
+
+const COSTI = [
+  { id: 'cost001', descrizione: 'Affitto ufficio via Roma 14',         importo: 1800.00, tipo: 'fisso',     periodicita: 'mensile',   categoria: 'Immobili' },
+  { id: 'cost002', descrizione: 'Adobe Creative Cloud (team)',          importo: 220.00,  tipo: 'fisso',     periodicita: 'mensile',   categoria: 'Software' },
+  { id: 'cost003', descrizione: 'Slack Business+',                      importo: 85.00,   tipo: 'fisso',     periodicita: 'mensile',   categoria: 'Software' },
+  { id: 'cost004', descrizione: 'Google Workspace Business',            importo: 72.00,   tipo: 'fisso',     periodicita: 'mensile',   categoria: 'Software' },
+  { id: 'cost005', descrizione: 'Commercialista (gestione contabilità)',importo: 4800.00, tipo: 'fisso',     periodicita: 'annuale',   categoria: 'Professionale' },
+  { id: 'cost006', descrizione: 'Assicurazione professionale RC',       importo: 1200.00, tipo: 'fisso',     periodicita: 'annuale',   categoria: 'Assicurazioni' },
+  { id: 'cost007', descrizione: 'Meta Ads (campagne clienti)',           importo: 600.00,  tipo: 'variabile', periodicita: 'mensile',   categoria: 'Pubblicità' },
+  { id: 'cost008', descrizione: 'Google Ads (campagne clienti)',         importo: 400.00,  tipo: 'variabile', periodicita: 'mensile',   categoria: 'Pubblicità' },
+  { id: 'cost009', descrizione: 'Fornitori stampa e grafica esterna',   importo: 800.00,  tipo: 'variabile', periodicita: 'trimestrale',categoria: 'Fornitori' },
+  { id: 'cost010', descrizione: 'Collaboratore esterno (Ing. Pucci)',   importo: 620.00,  tipo: 'variabile', periodicita: 'mensile',   categoria: 'Personale' },
+  { id: 'cost011', descrizione: 'Hosting e domini',                     importo: 35.00,   tipo: 'fisso',     periodicita: 'mensile',   categoria: 'Software' },
+  { id: 'cost012', descrizione: 'Utenze ufficio (luce + internet)',     importo: 180.00,  tipo: 'fisso',     periodicita: 'mensile',   categoria: 'Utenze' },
+];
+
+const PROVVIGIONI = [
+  { id: 'pv001', agente: 'Luca Serreli',    importo: 2400.00, contratto_ref: 'c2025001', data: ts('2025-01-15'), stato: 'pagata'    },
+  { id: 'pv002', agente: 'Luca Serreli',    importo: 4750.00, contratto_ref: 'c2025003', data: ts('2025-03-20'), stato: 'da_pagare' },
+  { id: 'pv003', agente: 'Federica Moro',   importo: 1100.00, contratto_ref: 'c2025002', data: ts('2025-02-15'), stato: 'pagata'    },
+  { id: 'pv004', agente: 'Federica Moro',   importo:  550.00, contratto_ref: 'c2025004', data: ts('2025-04-01'), stato: 'da_pagare' },
+  { id: 'pv005', agente: 'Roberto Angius',  importo: 1800.00, contratto_ref: 'c2024002', data: ts('2024-03-05'), stato: 'pagata'    },
+];
+
+const COMPENSI = [
+  { id: 'comp001', socio_ref: 'socio_marco',   importo: 4500.00, periodo: '2025-01', data_pagamento: ts('2025-01-31'), note: 'Compenso mensile standard' },
+  { id: 'comp002', socio_ref: 'socio_simone',  importo: 2700.00, periodo: '2025-01', data_pagamento: ts('2025-01-31'), note: 'Compenso mensile standard' },
+  { id: 'comp003', socio_ref: 'socio_alessia', importo: 1800.00, periodo: '2025-01', data_pagamento: ts('2025-01-31'), note: 'Compenso mensile standard' },
+  { id: 'comp004', socio_ref: 'socio_marco',   importo: 4500.00, periodo: '2025-02', data_pagamento: ts('2025-02-28'), note: 'Compenso mensile standard' },
+  { id: 'comp005', socio_ref: 'socio_simone',  importo: 2700.00, periodo: '2025-02', data_pagamento: ts('2025-02-28'), note: 'Compenso mensile standard' },
+  { id: 'comp006', socio_ref: 'socio_alessia', importo: 1800.00, periodo: '2025-02', data_pagamento: ts('2025-02-28'), note: 'Compenso mensile standard' },
+  { id: 'comp007', socio_ref: 'socio_marco',   importo: 4500.00, periodo: '2025-03', data_pagamento: ts('2025-03-31'), note: 'Compenso mensile standard' },
+  { id: 'comp008', socio_ref: 'socio_simone',  importo: 2700.00, periodo: '2025-03', data_pagamento: ts('2025-03-31'), note: 'Compenso mensile standard' },
+  { id: 'comp009', socio_ref: 'socio_alessia', importo: 1800.00, periodo: '2025-03', data_pagamento: ts('2025-03-31'), note: 'Compenso mensile standard' },
+  { id: 'comp010', socio_ref: 'socio_marco',   importo: 4500.00, periodo: '2025-04', data_pagamento: null,             note: 'Da pagare fine mese' },
+  { id: 'comp011', socio_ref: 'socio_simone',  importo: 2700.00, periodo: '2025-04', data_pagamento: null,             note: 'Da pagare fine mese' },
+  { id: 'comp012', socio_ref: 'socio_alessia', importo: 1800.00, periodo: '2025-04', data_pagamento: null,             note: 'Da pagare fine mese' },
+];
+
+// ════════════════════════════════════════════════════════════
+// FUNZIONE SEED
+// ════════════════════════════════════════════════════════════
+
+async function runSeed() {
+  const btn = document.getElementById('btnSeed');
+  btn.disabled = true;
+  log.innerHTML = '';
+
+  msg('🚀 Inizio seed database...', 'inf');
+
+  const sezioni = [
+    { nome: 'soci',        dati: SOCI },
+    { nome: 'conti',       dati: CONTI },
+    { nome: 'contratti',   dati: CONTRATTI },
+    { nome: 'movimenti',   dati: MOVIMENTI },
+    { nome: 'costi',       dati: COSTI },
+    { nome: 'provvigioni', dati: PROVVIGIONI },
+    { nome: 'compensi',    dati: COMPENSI },
+  ];
+
+  let totaleOk = 0;
+  let totaleErr = 0;
+
+  for (const sezione of sezioni) {
+    msg(`\n📂 Collezione: ${sezione.nome} (${sezione.dati.length} documenti)`, 'inf');
+    for (const item of sezione.dati) {
+      try {
+        await db.collection(sezione.nome).doc(item.id).set(item);
+        msg(`   ✔ ${item.id}`, 'ok');
+        totaleOk++;
+      } catch (e) {
+        msg(`   ✖ ${item.id} — ${e.message}`, 'err');
+        totaleErr++;
+      }
+    }
+  }
+
+  msg(`\n════════════════════════════════════`, 'inf');
+  if (totaleErr === 0) {
+    msg(`✅ COMPLETATO! ${totaleOk} documenti inseriti con successo.`, 'ok');
+    msg(`Puoi chiudere questa pagina e aprire il gestionale.`, 'ok');
+  } else {
+    msg(`⚠️  ${totaleOk} ok, ${totaleErr} errori. Controlla le credenziali Firebase.`, 'err');
+  }
+
+  btn.textContent = '✅ Seed completato';
+}
+</script>
+</body>
+</html>
