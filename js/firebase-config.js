@@ -6,12 +6,12 @@
 
 // ⚠️  DA COMPLETARE con i tuoi dati Firebase
 const firebaseConfig = {
-  apiKey:            "INSERISCI-API-KEY",
-  authDomain:        "INSERISCI-AUTH-DOMAIN",
-  projectId:         "INSERISCI-PROJECT-ID",
-  storageBucket:     "INSERISCI-STORAGE-BUCKET",
-  messagingSenderId: "INSERISCI-SENDER-ID",
-  appId:             "INSERISCI-APP-ID"
+  apiKey:            "AIzaSyDxwnqouHo_t8mNaOGQDEqbcRdd-Buvi5w",
+authDomain:        "strategica-mns.firebaseapp.com",
+projectId:         "strategica-mns",
+storageBucket:     "strategica-mns.firebasestorage.app",
+messagingSenderId: "546507455703",
+appId:             "1:546507455703:web:3a8ac23a6b90853e2d4492"
 }
 
 // Inizializzazione Firebase (SDK v9 compat)
