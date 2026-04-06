@@ -216,7 +216,7 @@ input, select, textarea { font-family: inherit; }
 
 /* --- TOPBAR --- */
 .topbar {
-  background: var(--bg1);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   padding: 0 26px;
   height: var(--tbh);
