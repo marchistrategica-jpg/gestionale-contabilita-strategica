@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestionale · Strategica MNS</title>
+
+  <!-- Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/base.css">
+
+  <!-- Firebase SDK v9 compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+  <style>
+    /* Stili specifici della shell — non del layout globale */
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px 5px 5px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .15s;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text1);
+    }
+    .user-chip:hover { background: var(--bg2); }
+    .user-avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--primaryD);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- =========== SIDEBAR =========== -->
+  <aside class="sidebar">
+
+    <!-- Brand / Logo -->
+    <div class="sb-brand" id="sb-brand">
+      <!-- Popolato da router.js via theme.js -->
+    </div>
+
+    <!-- Navigazione principale -->
+    <nav class="sb-nav" id="sb-nav">
+      <!-- Popolato da router.js via theme.js -->
+    </nav>
+
+    <!-- Link gestionali esterni -->
+    <div class="sb-externals" id="sb-externals" style="display:none">
+      <!-- Popolato da router.js via theme.js -->
+    </div>
+
+    <!-- Footer sidebar -->
+    <div class="sb-foot">
+      <span><span class="status-dot"></span>Firebase</span>
+      <span id="sb-version">v1.0</span>
+    </div>
+
+  </aside>
+  <!-- =========== /SIDEBAR =========== -->
+
+
+  <!-- =========== AREA PRINCIPALE =========== -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div id="topbar-title" class="topbar-title">Dashboard</div>
+      <div class="topbar-right">
+        <span id="topbar-date" class="topbar-date"></span>
+        <div class="user-chip" id="user-chip">
+          <div class="user-avatar" id="user-initials">—</div>
+          <span id="user-name">Utente</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Contenuto modulo (caricato dinamicamente) -->
+    <div class="content">
+      <div id="main-content">
+        <div class="loading">
+          <div class="spinner"></div>
+          Caricamento...
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <!-- =========== /AREA PRINCIPALE =========== -->
+
+</div>
+
+<!-- Container toast notifiche -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- App init -->
+<script type="module">
+  import { initRouter }    from './js/router.js'
+  import { todayFormatted } from './js/utils.js'
+
+  // Data nel topbar
+  const dateEl = document.getElementById('topbar-date')
+  if (dateEl) dateEl.textContent = todayFormatted()
+
+  // Avvia il router
+  initRouter()
+</script>
+
+</body>
+</html>
