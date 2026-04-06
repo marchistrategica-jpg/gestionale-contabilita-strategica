@@ -68,7 +68,7 @@ input, select, textarea { font-family: inherit; }
   position: fixed;
   left: 0; top: 0; bottom: 0;
   width: var(--sw);
-  background: var(--bg1);
+  background: var(--bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
