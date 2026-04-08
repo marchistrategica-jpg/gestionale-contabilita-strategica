@@ -757,21 +757,28 @@ function _apriDettaglioRate(contrattoId) {
         ? '<span class="badge badge-red">Scaduta</span>'
         : '<span class="badge badge-amber">In attesa</span>'
 
-      // Pulsante "Registra incasso" solo per rate in attesa
-      const btnIncasso = r.stato === 'attesa' ? `
-        <button
-          onclick="window.__contrattiRegistraIncasso('${r.id}', '${_esc(contrattoId)}')"
-          style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid rgba(16,185,129,0.4);
-                 background:rgba(16,185,129,0.08);color:var(--green);font-size:11px;font-weight:700;
-                 cursor:pointer;font-family:Montserrat,sans-serif;">
-          + Registra incasso
-        </button>` : ''
+        // Bottone "Segna come pagata" con data picker inline
+      const oggi = new Date().toISOString().split('T')[0]
+      const btnPaga = r.stato === 'attesa' ? `
+        <div style="margin-top:10px;padding:10px;background:var(--bg2);border-radius:6px;border:1px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);margin-bottom:6px;">Registra pagamento</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="date" id="data-paga-${r.id}" value="${oggi}"
+              style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:5px;
+                     font-family:Montserrat,sans-serif;font-size:12px;color:var(--text0);">
+            <button onclick="window.__contrattiPagaRata('${r.id}','${contrattoId}')"
+              style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:5px;
+                     font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer;">
+              ✓ Pagata
+            </button>
+          </div>
+        </div>` : ''
 
-      return `<div class="rate-dettaglio-row ${statoClass}">
+      return `<div class="rate-dettaglio-row ${statoClass}" id="rata-row-${r.id}">
         <div>
           <div style="font-weight:600;color:var(--text0);">${_esc(r.descrizione || 'Rata')}</div>
-          <div style="font-size:10px;color:var(--text2);">Imponibile: ${formatEuro(r.importo_imponibile)} + IVA ${r.iva_rate}%</div>
-          ${btnIncasso}
+          <div style="font-size:10px;color:var(--text2);margin-top:2px;">Imponibile: ${formatEuro(r.importo_imponibile)} + IVA ${r.iva_rate}%</div>
+          ${btnPaga}
         </div>
         <div style="font-size:12px;">${r.data_prevista ? formatDate(_toDate(r.data_prevista)) : '—'}</div>
         <div style="font-weight:700;color:var(--text0);">${formatEuro(r.importo_totale)}</div>
@@ -806,39 +813,68 @@ function _chiudiModalRate() {
 
 
 // ============================================================
-// REGISTRA INCASSO DA CONTRATTO
-// Apre il modulo Incassi pre-compilato con i dati della rata
+// SEGNA RATA COME PAGATA — crea automaticamente il movimento
 // ============================================================
-function _registraIncasso(rataId, contrattoId) {
-  // Chiudi il modal rate
-  _chiudiModalRate()
-
+async function _pagaRata(rataId, contrattoId) {
   const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
-  const c = _contratti.find(x => x.id === contrattoId)
-  if (!r || !c) return
+  const contratto = _contratti.find(x => x.id === contrattoId)
+  if (!r || !contratto) return
 
-  // Naviga a Incassi con i parametri pre-compilati nel sessionStorage
-  const precompila = {
-    tipo:          'incasso',
-    contratto_ref: contrattoId,
-    rata_ref:      rataId,
-    importo:       r.importo_totale,
-    iva_rate:      r.iva_rate,
-    descrizione:   `${r.descrizione || 'Rata'} — ${c.cliente}`,
-    categoria:     'Contratto',
-    conto:         c.conto_accredito || '',
-    data:          new Date().toISOString().split('T')[0],
+  // Leggi la data selezionata dall'input inline
+  const inputData = document.getElementById(`data-paga-${rataId}`)
+  const dataPagamento = inputData?.value || new Date().toISOString().split('T')[0]
+
+  // Disabilita il bottone durante il salvataggio
+  const btn = document.querySelector(`[onclick*="${rataId}"]`)
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvataggio...' }
+
+  try {
+    const ts = toTimestamp(dataPagamento)
+
+    // 1. Crea il movimento in /movimenti
+    const movimento = {
+      tipo:          'incasso',
+      importo:       r.importo_totale || 0,
+      data:          ts,
+      descrizione:   `${_esc(r.descrizione || 'Rata')} — ${_esc(contratto.cliente || '')}`,
+      categoria:     'Contratto',
+      conto:         contratto.conto_accredito || null,
+      conto_nome:    contratto.conto_accredito_nome || null,
+      iva_rate:      r.iva_rate || 0,
+      iva_importo:   r.importo_iva || 0,
+      contratto_ref: contrattoId,
+      rata_ref:      rataId,
+      createdAt:     FieldValue.serverTimestamp()
+    }
+    await collections.movimenti().add(movimento)
+
+    // 2. Segna la rata come pagata
+    await collections.rate().doc(rataId).update({
+      stato:          'pagata',
+      data_pagamento: ts
+    })
+
+    // 3. Aggiorna cache locale
+    if (r) { r.stato = 'pagata'; r.data_pagamento = ts }
+
+    toast(`Pagamento di ${formatEuro(r.importo_totale)} registrato ✓`, 'success')
+
+    // 4. Ricarica dati e aggiorna la vista
+    await _caricaDati()
+    _renderTabella()
+
+    // 5. Riapri il modal aggiornato
+    _apriDettaglioRate(contrattoId)
+
+  } catch (err) {
+    console.error('Errore pagamento rata:', err)
+    toast('Errore nel salvataggio. Riprova.', 'error')
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Pagata' }
   }
-
-  // Salva i dati in sessionStorage per incassi.js
-  sessionStorage.setItem('incassi_precompila', JSON.stringify(precompila))
-
-  // Naviga al modulo incassi
-  window.location.hash = 'incassi'
 }
 
-// Espone la funzione al DOM (usata dal bottone inline nelle rate)
-window.__contrattiRegistraIncasso = _registraIncasso
+// Espone al DOM
+window.__contrattiPagaRata = _pagaRata
 
 
 // ============================================================
