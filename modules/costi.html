@@ -53,72 +53,50 @@
       <div>
         <span class="card-title">Analisi Break Even</span>
         <span class="text-muted" style="display:block;font-size:11px;margin-top:2px;font-weight:500;">
-          Ultimi 12 mesi — confronto tra incassi reali e valore contratti firmati
+          Media ultimi 12 mesi — soglia = costi fissi mensili totali
         </span>
       </div>
     </div>
 
-    <div style="padding:16px 20px;">
-
-      <!-- KPI break even -->
-      <div class="kpi-grid" style="margin-bottom:20px;">
-        <div class="kpi-card primary">
-          <div class="kpi-label">Fatturato medio / mese</div>
-          <div class="kpi-value" id="be-fatturato">—</div>
-          <div class="kpi-sub" id="be-fatturato-sub">ultimi 12 mesi</div>
-        </div>
-        <div class="kpi-card secondary">
-          <div class="kpi-label">Valore contratti medio / mese</div>
-          <div class="kpi-value" id="be-contratti">—</div>
-          <div class="kpi-sub" id="be-contratti-sub">contratti firmati</div>
-        </div>
-        <div class="kpi-card green">
-          <div class="kpi-label">Margine sul fatturato</div>
-          <div class="kpi-value" id="be-margine">—</div>
-          <div class="kpi-sub" id="be-margine-sub">vs break even</div>
-        </div>
-        <div class="kpi-card amber">
-          <div class="kpi-label">Margine sui contratti</div>
-          <div class="kpi-value" id="be-margine-cont">—</div>
-          <div class="kpi-sub" id="be-margine-cont-sub">vs break even</div>
-        </div>
+    <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;" id="be-container">
+      <div class="loading" id="be-loading">
+        <div class="spinner"></div>
+        Calcolo in corso...
       </div>
 
-      <!-- Grafico -->
-      <div style="position:relative;height:340px;">
-        <div class="loading" id="be-loading">
-          <div class="spinner"></div>
-          Calcolo in corso...
+      <!-- Barra 1: Incassi registrati vs Break Even -->
+      <div class="be-bar-card" id="be-card-incassi" style="display:none;">
+        <div class="be-bar-title">Break-Even su Incassi Registrati</div>
+        <div class="be-bar-scale">
+          <span>€ 0</span>
+          <span id="be-bar1-soglia">Break-Even: —</span>
         </div>
-        <canvas id="be-chart" style="display:none;"></canvas>
+        <div class="be-bar-track">
+          <div class="be-bar-fill" id="be-bar1-fill" style="width:0%"></div>
+          <div class="be-bar-marker" id="be-bar1-marker" style="left:100%"></div>
+        </div>
+        <div class="be-bar-footer" id="be-bar1-text">—</div>
       </div>
 
-      <!-- Legenda personalizzata -->
-      <div style="display:flex;gap:20px;justify-content:center;margin-top:12px;flex-wrap:wrap;font-size:11px;font-weight:600;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:16px;height:10px;border-radius:2px;background:rgba(16,185,129,0.8);"></div>
-          <span style="color:var(--text1);">Incassi mese (sopra BE)</span>
+      <!-- Barra 2: Valore contratti firmati vs Break Even -->
+      <div class="be-bar-card" id="be-card-contratti" style="display:none;">
+        <div class="be-bar-title">Break-Even su Contratti Firmati</div>
+        <div class="be-bar-scale">
+          <span>€ 0</span>
+          <span id="be-bar2-soglia">Break-Even: —</span>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:16px;height:10px;border-radius:2px;background:rgba(248,113,113,0.8);"></div>
-          <span style="color:var(--text1);">Incassi mese (sotto BE)</span>
+        <div class="be-bar-track">
+          <div class="be-bar-fill be-bar-fill-blue" id="be-bar2-fill" style="width:0%"></div>
+          <div class="be-bar-marker" id="be-bar2-marker" style="left:100%"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:16px;height:3px;background:var(--secondary);"></div>
-          <span style="color:var(--text1);">Contratti firmati</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:16px;height:2px;border-top:2px dashed var(--red);"></div>
-          <span style="color:var(--text1);">Break Even</span>
-        </div>
+        <div class="be-bar-footer" id="be-bar2-text">—</div>
       </div>
 
-      <!-- Nota informativa -->
-      <div id="be-note" style="display:none;margin-top:14px;padding:10px 14px;background:var(--bg2);border-radius:var(--radius-sm);font-size:11px;color:var(--text1);font-weight:500;">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:5px;color:var(--secondary)">
-          <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-        </svg>
-        <span id="be-note-text"></span>
+      <!-- Nessun dato -->
+      <div id="be-empty" style="display:none;">
+        <div class="empty-state">
+          <p>Nessun dato disponibile. Aggiungi costi fissi e registra movimenti per vedere l'analisi.</p>
+        </div>
       </div>
 
     </div>
@@ -219,4 +197,52 @@
 .cat-it         { background: rgba(16,185,129,.1); color: var(--green);   }
 .cat-marketing  { background: var(--amberD);      color: #b45309;         }
 .cat-altro      { background: var(--bg2);          color: var(--text1);   }
+
+/* ── Break Even bars ─────────────────────────────────────── */
+.be-bar-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.be-bar-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text0);
+  margin-bottom: 14px;
+}
+.be-bar-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+.be-bar-track {
+  position: relative;
+  height: 22px;
+  background: var(--bg2);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.be-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 11px;
+  transition: width .6s ease;
+  max-width: 100%;
+}
+.be-bar-fill.sotto { background: var(--red); }
+.be-bar-fill-blue {
+  background: var(--secondary) !important;
+}
+.be-bar-fill-blue.sotto { background: rgba(248,113,113,0.8) !important; }
+.be-bar-footer {
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text1);
+  text-align: center;
+}
 </style>
