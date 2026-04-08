@@ -2,13 +2,6 @@
      MODULO: CONTRATTI
      File: modules/contratti.html
      JS:   js/modules/contratti.js (caricato dal router)
-
-     DIPENDENZE (già nella shell index.html):
-       - css/base.css   → tutte le classi usate qui
-       - css/icons.js   → ICONS.plus, edit, trash, search, close,
-                          filter, download, calendar, contract, check
-       - js/utils.js    → formatEuro, formatDate, toast, openModal,
-                          closeModal, initModalClose, confirmDelete
      ============================================================ -->
 
 <!-- ── Header pagina ─────────────────────────────────────────── -->
@@ -19,64 +12,45 @@
       <span id="contratti-count">—</span> contratti totali
     </p>
   </div>
-  <div class="flex-center gap-8">
-    <!-- Bottone esporta (futuro) -->
-    <button class="btn btn-secondary" id="btn-export" style="display:none;">
-      <span id="ico-download"></span> Esporta
-    </button>
-    <!-- Bottone nuovo contratto -->
-    <button class="btn btn-primary" id="btn-nuovo">
-      <span id="ico-plus"></span> Nuovo contratto
-    </button>
-  </div>
+  <button class="btn btn-primary" id="btn-nuovo">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Nuovo contratto
+  </button>
 </div>
 
 <!-- ── Filtri: ricerca + chip stato ──────────────────────────── -->
 <div class="flex-center gap-8" style="margin-bottom:16px;flex-wrap:wrap;">
-
-  <!-- Barra di ricerca -->
   <div class="search-box">
-    <span id="ico-search"></span>
-    <input
-      class="search-input"
-      type="text"
-      id="input-ricerca"
-      placeholder="Cerca per cliente o numero..."
-      autocomplete="off"
-    />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input class="search-input" type="text" id="input-ricerca" placeholder="Cerca per cliente…" autocomplete="off"/>
   </div>
 
-  <!-- Chip filtro stato -->
   <div class="flex-center gap-8" id="filtri-stato" style="flex-wrap:wrap;">
     <button class="chip-stato active" data-stato="tutti">Tutti</button>
-    <button class="chip-stato" data-stato="attivo">Attivi</button>
     <button class="chip-stato" data-stato="in_scadenza">In scadenza</button>
     <button class="chip-stato" data-stato="scaduto">Scaduti</button>
     <button class="chip-stato" data-stato="sospeso">Sospesi</button>
     <button class="chip-stato" data-stato="concluso">Conclusi</button>
   </div>
-
 </div>
 
 <!-- ── Tabella contratti ──────────────────────────────────────── -->
 <div class="table-wrap">
-
-  <!-- Loading iniziale -->
   <div class="loading" id="contratti-loading">
     <div class="spinner"></div>
     Caricamento contratti...
   </div>
 
-  <!-- Tabella (nascosta finché non ci sono dati) -->
   <div id="contratti-table-wrap" style="display:none;">
-    <table id="contratti-table">
+    <table>
       <thead>
         <tr>
-          <th>Numero</th>
           <th>Cliente</th>
-          <th>Data inizio</th>
-          <th>Data fine</th>
-          <th class="text-right">Valore</th>
+          <th>Data firma</th>
+          <th class="text-right">Imponibile</th>
+          <th class="text-right">Totale (IVA incl.)</th>
+          <th class="text-center">Rate</th>
+          <th>Prossima rata</th>
           <th>Stato</th>
           <th class="text-right">Azioni</th>
         </tr>
@@ -85,84 +59,134 @@
     </table>
   </div>
 
-  <!-- Stato vuoto -->
   <div class="empty-state" id="contratti-empty" style="display:none;">
-    <span id="ico-contract-empty"></span>
-    <p>Nessun contratto trovato.</p>
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    <p id="contratti-empty-msg">Nessun contratto trovato.</p>
   </div>
-
 </div>
+
 
 <!-- ════════════════════════════════════════════════════════════
      MODAL — Nuovo / Modifica contratto
 ════════════════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-contratto">
-  <div class="modal">
+  <div class="modal" style="max-width:740px;width:95%;">
 
     <div class="modal-header">
       <span class="modal-title" id="modal-contratto-title">Nuovo contratto</span>
       <button class="modal-close" id="modal-contratto-close">
-        <span id="ico-close-modal"></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
 
-    <div class="modal-body">
+    <div class="modal-body" style="max-height:78vh;overflow-y:auto;">
       <form id="form-contratto" autocomplete="off">
+        <input type="hidden" id="f-id"/>
 
-        <!-- Numero + Cliente -->
+        <!-- ── Sezione 1: Dati cliente ─────────────────────── -->
+        <div class="form-section-label">Dati contratto</div>
+
         <div class="form-row">
-          <div class="form-group">
-            <label class="form-label" for="f-numero">Numero *</label>
-            <input class="form-control" type="text" id="f-numero"
-              placeholder="es. 2025-001" required />
-          </div>
-          <div class="form-group">
+          <div class="form-group" style="flex:2;">
             <label class="form-label" for="f-cliente">Cliente *</label>
-            <input class="form-control" type="text" id="f-cliente"
-              placeholder="Nome cliente o azienda" required />
-          </div>
-        </div>
-
-        <!-- Data inizio + Data fine -->
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label" for="f-data-inizio">Data inizio *</label>
-            <input class="form-control" type="date" id="f-data-inizio" required />
+            <input class="form-control" type="text" id="f-cliente" placeholder="Nome cliente o azienda" required/>
           </div>
           <div class="form-group">
-            <label class="form-label" for="f-data-fine">Data fine *</label>
-            <input class="form-control" type="date" id="f-data-fine" required />
-          </div>
-        </div>
-
-        <!-- Valore + Stato -->
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label" for="f-valore">Valore (€) *</label>
-            <input class="form-control" type="number" id="f-valore"
-              placeholder="0.00" min="0" step="0.01" required />
+            <label class="form-label" for="f-data-inizio">Data firma *</label>
+            <input class="form-control" type="date" id="f-data-inizio" required/>
           </div>
           <div class="form-group">
-            <label class="form-label" for="f-stato">Stato *</label>
-            <select class="form-control" id="f-stato" required>
-              <option value="attivo">Attivo</option>
+            <label class="form-label" for="f-stato">Stato</label>
+            <select class="form-control" id="f-stato">
+              <option value="corrente">Corrente</option>
               <option value="sospeso">Sospeso</option>
               <option value="concluso">Concluso</option>
-              <option value="scaduto">Scaduto</option>
             </select>
           </div>
         </div>
 
-        <!-- Note -->
-        <div class="form-group">
-          <label class="form-label" for="f-note">Note</label>
-          <textarea class="form-control" id="f-note"
-            rows="3" placeholder="Note aggiuntive (opzionale)"
-            style="resize:vertical;"></textarea>
+        <!-- ── Sezione 2: Importi ──────────────────────────── -->
+        <div class="form-section-label" style="margin-top:20px;">Valore contratto</div>
+
+        <div class="form-row" style="align-items:flex-end;">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label" for="f-imponibile">Imponibile (€) *</label>
+            <input class="form-control" type="number" id="f-imponibile" placeholder="0.00" min="0" step="0.01" required/>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f-iva-rate">IVA %</label>
+            <select class="form-control" id="f-iva-rate">
+              <option value="0">0% – Esente</option>
+              <option value="4">4%</option>
+              <option value="5">5%</option>
+              <option value="10">10%</option>
+              <option value="22" selected>22% – Ordinaria</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">IVA (€)</label>
+            <input class="form-control" type="text" id="f-iva-importo" readonly style="background:var(--bg1);color:var(--text1);"/>
+          </div>
+          <div class="form-group" style="flex:2;">
+            <label class="form-label" style="color:var(--primary);font-weight:700;">Totale contratto</label>
+            <input class="form-control" type="text" id="f-totale" readonly style="background:var(--primaryD);color:var(--primary);font-weight:800;font-size:15px;"/>
+          </div>
         </div>
 
-        <!-- ID nascosto per la modifica -->
-        <input type="hidden" id="f-id" />
+        <!-- ── Sezione 3: Note e modalità ─────────────────── -->
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" for="f-modalita">Modalità di pagamento</label>
+            <textarea class="form-control" id="f-modalita" rows="2" placeholder="es. Bonifico bancario, 30gg dalla firma…" style="resize:vertical;"></textarea>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" for="f-note">Note</label>
+            <textarea class="form-control" id="f-note" rows="2" placeholder="Note aggiuntive (opzionale)" style="resize:vertical;"></textarea>
+          </div>
+        </div>
+
+        <!-- ── Sezione 4: Piano di pagamento (rate) ──────── -->
+        <div style="margin-top:20px;">
+          <div class="flex-center gap-8" style="justify-content:space-between;margin-bottom:10px;">
+            <div class="form-section-label" style="margin:0;">Piano di pagamento</div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-aggiungi-rata">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Aggiungi rata
+            </button>
+          </div>
+
+          <!-- Header colonne rate -->
+          <div class="rata-header" id="rata-header" style="display:none;">
+            <span>Descrizione</span>
+            <span>Imponibile €</span>
+            <span>IVA %</span>
+            <span>IVA €</span>
+            <span>Totale €</span>
+            <span>Data prevista</span>
+            <span></span>
+          </div>
+
+          <div id="rate-container">
+            <div id="rate-empty-hint" style="font-size:12px;color:var(--text2);padding:12px 0;text-align:center;">
+              Nessuna rata programmata. Clicca "Aggiungi rata" per creare il piano di pagamento.
+            </div>
+          </div>
+
+          <!-- Riepilogo rate vs totale contratto -->
+          <div id="rate-riepilogo" style="display:none;margin-top:10px;padding:10px 14px;border-radius:var(--radius-sm);background:var(--bg1);border:1px solid var(--border);font-size:12px;">
+            <div class="flex-center gap-8" style="justify-content:space-between;">
+              <span style="color:var(--text1);">Totale rate programmate:</span>
+              <span id="rate-totale-calcolato" style="font-weight:700;color:var(--text0);">—</span>
+            </div>
+            <div class="flex-center gap-8" style="justify-content:space-between;margin-top:4px;">
+              <span style="color:var(--text1);">Totale contratto:</span>
+              <span id="rate-totale-contratto" style="font-weight:700;color:var(--text0);">—</span>
+            </div>
+            <div id="rate-diff-row" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);">
+              <span id="rate-diff-msg" style="font-size:11px;"></span>
+            </div>
+          </div>
+        </div>
 
       </form>
     </div>
@@ -170,7 +194,7 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" id="btn-annulla">Annulla</button>
       <button class="btn btn-primary" id="btn-salva">
-        <span id="ico-check-modal"></span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         Salva contratto
       </button>
     </div>
@@ -178,65 +202,155 @@
   </div>
 </div>
 
-<!-- ── Stili specifici del modulo Contratti ───────────────────
-     Solo classi NON presenti in base.css.
-────────────────────────────────────────────────────────────── -->
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — Dettaglio rate contratto
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-rate-dettaglio">
+  <div class="modal" style="max-width:640px;width:95%;">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-rate-title">Rate</span>
+      <button class="modal-close" id="modal-rate-close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="rate-dettaglio-body"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="modal-rate-chiudi">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Stili specifici del modulo Contratti ───────────────────── -->
 <style>
-/* Chip filtro stato */
 .chip-stato {
   padding: 5px 14px;
   border-radius: 20px;
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--text1);
   font-family: 'Montserrat', system-ui, sans-serif;
   transition: all .15s;
   letter-spacing: .02em;
 }
-.chip-stato:hover {
-  background: var(--bg2);
-  color: var(--text0);
-}
+.chip-stato:hover { background: var(--bg2); color: var(--text0); }
 .chip-stato.active {
   background: var(--primaryD);
   color: var(--primary);
   border-color: rgba(230,22,92,0.3);
 }
 
-/* Riga in scadenza (entro 30 giorni) — bordo ambra a sinistra */
-.row-in-scadenza td:first-child {
-  border-left: 3px solid var(--amber);
-}
-.row-in-scadenza {
-  background: var(--amberD);
+.form-section-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 
-/* Sotto la data fine: mostra i giorni rimasti */
+/* Riga rata nel piano pagamenti */
+.rata-row {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 80px 90px 90px 130px 36px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 5px;
+  background: var(--bg);
+}
+.rata-header {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 80px 90px 90px 130px 36px;
+  gap: 6px;
+  padding: 0 8px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.rata-row input, .rata-row select {
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'Montserrat', sans-serif;
+  color: var(--text0);
+  background: var(--bg);
+  width: 100%;
+  box-sizing: border-box;
+}
+.rata-row input[readonly] {
+  background: var(--bg1);
+  color: var(--text1);
+}
+.rata-row input:focus, .rata-row select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.btn-rata-remove {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(248,113,113,0.3);
+  background: rgba(248,113,113,0.08);
+  color: var(--red);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+}
+.btn-rata-remove:hover { background: rgba(248,113,113,0.18); }
+
+.row-scaduto { background: rgba(248,113,113,0.05); }
+.row-scaduto td:first-child { border-left: 3px solid var(--red); }
+.row-in-scadenza { background: rgba(251,191,36,0.05); }
+.row-in-scadenza td:first-child { border-left: 3px solid var(--amber); }
+
 .giorni-rimasti {
-  display: block;
+  display: inline-block;
+  margin-left: 6px;
   font-size: 10px;
   font-weight: 600;
   color: var(--amber);
-  margin-top: 2px;
+}
+.giorni-scaduto {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--red);
 }
 
-/* Azioni riga tabella */
-.azioni-cell {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
+textarea.form-control { min-height: 60px; }
 
-/* Textarea form-control */
-textarea.form-control {
-  min-height: 80px;
+.rate-dettaglio-row {
+  display: grid;
+  grid-template-columns: 1.5fr 100px 100px 110px 80px;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 6px;
+  font-size: 12px;
+  align-items: center;
 }
+.rate-dettaglio-row.pagata { background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.2); }
+.rate-dettaglio-row.scaduta { background: rgba(248,113,113,0.05); border-color: rgba(248,113,113,0.2); }
 
-/* Responsive: su schermi piccoli le azioni si accatastano */
-@media (max-width: 860px) {
-  .azioni-cell { flex-direction: column; gap: 4px; }
+@media (max-width: 760px) {
+  .rata-row, .rata-header { grid-template-columns: 1fr 1fr; }
 }
 </style>
