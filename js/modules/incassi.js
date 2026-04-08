@@ -69,36 +69,41 @@ export async function init() {
 // ============================================================
 async function _caricaMovimenti() {
   try {
-    const inizio = new Date(annoAttivo, meseAttivo - 1, 1)
-    const fine   = new Date(annoAttivo, meseAttivo, 0, 23, 59, 59)
-
-    // Forza dati freschi dal server (con fallback alla cache)
-    const _getFresh = async (q) => {
-      try { return await q.get({ source: 'server' }) }
-      catch (e) { return await q.get() }
+    // Carica TUTTI i movimenti senza filtri Firestore
+    // Il filtro mese/anno viene applicato in JavaScript
+    // Questo evita problemi di indici compositi e cache Firestore
+    let snapshot
+    try {
+      snapshot = await collections.movimenti().get({ source: 'server' })
+    } catch (e) {
+      snapshot = await collections.movimenti().get()
     }
-    const snapshot = await _getFresh(
-      collections.movimenti()
-        .where('data', '>=', toTimestamp(inizio.toISOString()))
-        .where('data', '<=', toTimestamp(fine.toISOString()))
-    )
 
-    tuttiMovimenti = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    // Ordina per data decrescente in JS
+    const tutti = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
+    // Filtra per mese e anno selezionati
+    tuttiMovimenti = tutti.filter(m => {
+      const d = m.data?.toDate ? m.data.toDate() : new Date(m.data)
+      if (!d || isNaN(d)) return false
+      return d.getFullYear() === annoAttivo && (d.getMonth() + 1) === meseAttivo
+    })
+
+    // Ordina per data decrescente
     tuttiMovimenti.sort((a, b) => {
       const da = a.data?.toDate ? a.data.toDate() : new Date(a.data || 0)
       const db = b.data?.toDate ? b.data.toDate() : new Date(b.data || 0)
       return db - da
     })
+
     _applicaFiltri()
+
   } catch (err) {
     console.error('Errore caricamento movimenti:', err)
     toast('Errore nel caricamento dei movimenti', 'error')
     document.getElementById('tabella-wrap').innerHTML =
-      `<div class="empty-state"><p>Impossibile caricare i dati.</p></div>`
+      `<div class="empty-state"><p>Impossibile caricare i dati. Controlla la connessione.</p></div>`
   }
 }
-
 async function _caricaContratti() {
   try {
     const snap = await collections.contratti().get()
