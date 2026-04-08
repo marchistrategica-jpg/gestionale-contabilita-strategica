@@ -72,11 +72,16 @@ async function _caricaMovimenti() {
     const inizio = new Date(annoAttivo, meseAttivo - 1, 1)
     const fine   = new Date(annoAttivo, meseAttivo, 0, 23, 59, 59)
 
-    // Rimuovi orderBy da Firestore per evitare richiesta indice composito
-    const snapshot = await collections.movimenti()
-      .where('data', '>=', toTimestamp(inizio.toISOString()))
-      .where('data', '<=', toTimestamp(fine.toISOString()))
-      .get()
+    // Forza dati freschi dal server (con fallback alla cache)
+    const _getFresh = async (q) => {
+      try { return await q.get({ source: 'server' }) }
+      catch (e) { return await q.get() }
+    }
+    const snapshot = await _getFresh(
+      collections.movimenti()
+        .where('data', '>=', toTimestamp(inizio.toISOString()))
+        .where('data', '<=', toTimestamp(fine.toISOString()))
+    )
 
     tuttiMovimenti = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     // Ordina per data decrescente in JS
@@ -308,6 +313,7 @@ function _initListeners() {
 
   // Pulsanti
   document.getElementById('btn-nuovo')?.addEventListener('click', _apriModalNuovo)
+  document.getElementById('btn-aggiorna-incassi')?.addEventListener('click', async () => await _caricaMovimenti())
   document.getElementById('btn-export-csv')?.addEventListener('click', _esportaCSV)
 
   // Tipo toggle nel modal
