@@ -51,12 +51,16 @@ async function _caricaDati() {
   if (elUp) elUp.textContent = 'Aggiornamento in corso...'
 
   try {
-    // Legge tutte le collezioni in parallelo
+    // Legge tutte le collezioni forzando dati freschi dal server
+    const _get = async (query) => {
+      try { return await query.get({ source: 'server' }) }
+      catch (e) { return await query.get() }
+    }
     const [snapMov, snapContratti, snapConti, snapRate] = await Promise.all([
-      collections.movimenti().orderBy('data', 'desc').get(),
-      collections.contratti().get(),
-      collections.conti().get(),
-      collections.rate().get(),
+      _get(collections.movimenti().orderBy('data', 'desc')),
+      _get(collections.contratti()),
+      _get(collections.conti()),
+      _get(collections.rate()),
     ])
 
     const movimenti  = snapMov.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -174,8 +178,19 @@ function _renderKpiConti(conti, movimenti) {
 function _calcolaSaldoConto(conto, movimenti) {
   const base = Number(conto.saldo_iniziale) || 0
 
+  // Confronto robusto: ID Firestore, nome del conto, o conto_nome denormalizzato
+  const nomeNorm = (conto.nome || '').toLowerCase().trim()
+
   const delta = movimenti
-    .filter(m => m.conto === conto.id || m.conto === conto.nome)
+    .filter(m => {
+      if (!m.conto && !m.conto_nome) return false
+      if (m.conto === conto.id) return true                          // match per ID
+      if (m.conto === conto.nome) return true                        // match per nome esatto
+      if (m.conto_nome === conto.nome) return true                   // match per conto_nome
+      // match case-insensitive per retrocompatibilità con testo libero
+      const mc = (m.conto || m.conto_nome || '').toLowerCase().trim()
+      return mc === nomeNorm
+    })
     .reduce((acc, m) => {
       const imp = Number(m.importo) || 0
       return acc + (m.tipo === 'incasso' ? imp : -imp)
