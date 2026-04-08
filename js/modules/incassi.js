@@ -72,13 +72,19 @@ async function _caricaMovimenti() {
     const inizio = new Date(annoAttivo, meseAttivo - 1, 1)
     const fine   = new Date(annoAttivo, meseAttivo, 0, 23, 59, 59)
 
+    // Rimuovi orderBy da Firestore per evitare richiesta indice composito
     const snapshot = await collections.movimenti()
       .where('data', '>=', toTimestamp(inizio.toISOString()))
       .where('data', '<=', toTimestamp(fine.toISOString()))
-      .orderBy('data', 'desc')
       .get()
 
     tuttiMovimenti = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    // Ordina per data decrescente in JS
+    tuttiMovimenti.sort((a, b) => {
+      const da = a.data?.toDate ? a.data.toDate() : new Date(a.data || 0)
+      const db = b.data?.toDate ? b.data.toDate() : new Date(b.data || 0)
+      return db - da
+    })
     _applicaFiltri()
   } catch (err) {
     console.error('Errore caricamento movimenti:', err)
@@ -90,7 +96,7 @@ async function _caricaMovimenti() {
 
 async function _caricaContratti() {
   try {
-    const snap = await collections.contratti().orderBy('cliente').get()
+    const snap = await collections.contratti().get()
     tuttiContratti = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
     // Carica tutte le rate (per collegamento)
@@ -115,7 +121,7 @@ async function _caricaContratti() {
 
 async function _caricaConti() {
   try {
-    const snap = await collections.conti().orderBy('nome').get()
+    const snap = await collections.conti().get()
     tuttiConti = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
     const sel = document.getElementById('mov-conto')
