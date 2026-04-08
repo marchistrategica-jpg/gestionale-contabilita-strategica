@@ -1,5 +1,5 @@
 <!-- ============================================================
-     COSTI.HTML — Modulo Costi & Break Even v2
+     COSTI.HTML — Modulo Costi & Break Even v3
      ============================================================ -->
 
 <div class="content">
@@ -40,10 +40,7 @@
       </button>
     </div>
     <div id="table-costi-wrap">
-      <div class="loading">
-        <div class="spinner"></div>
-        Caricamento costi...
-      </div>
+      <div class="loading"><div class="spinner"></div>Caricamento costi...</div>
     </div>
   </div>
 
@@ -53,49 +50,52 @@
       <div>
         <span class="card-title">Analisi Break Even</span>
         <span class="text-muted" style="display:block;font-size:11px;margin-top:2px;font-weight:500;">
-          Media ultimi 12 mesi — soglia = costi fissi mensili totali
+          Media ultimi 12 mesi — soglia = totale costi fissi mensili
         </span>
       </div>
     </div>
 
-    <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;" id="be-container">
+    <div style="padding:20px 24px;" id="be-container">
+
+      <!-- Loading -->
       <div class="loading" id="be-loading">
         <div class="spinner"></div>
         Calcolo in corso...
       </div>
 
-      <!-- Barra 1: Incassi registrati vs Break Even -->
-      <div class="be-bar-card" id="be-card-incassi" style="display:none;">
-        <div class="be-bar-title">Break-Even su Incassi Registrati</div>
-        <div class="be-bar-scale">
+      <!-- Barra 1: Incassi registrati -->
+      <div class="be-card" id="be-card-1" style="display:none;">
+        <div class="be-card-title">Break-Even su Incassi Registrati</div>
+        <div class="be-scale">
           <span>€ 0</span>
-          <span id="be-bar1-soglia">Break-Even: —</span>
+          <span id="be-soglia-1">Break-Even: —</span>
         </div>
-        <div class="be-bar-track">
-          <div class="be-bar-fill" id="be-bar1-fill" style="width:0%"></div>
-          <div class="be-bar-marker" id="be-bar1-marker" style="left:100%"></div>
+        <div class="be-track">
+          <div class="be-fill" id="be-fill-1"></div>
         </div>
-        <div class="be-bar-footer" id="be-bar1-text">—</div>
+        <div class="be-label" id="be-label-1">—</div>
       </div>
 
-      <!-- Barra 2: Valore contratti firmati vs Break Even -->
-      <div class="be-bar-card" id="be-card-contratti" style="display:none;">
-        <div class="be-bar-title">Break-Even su Contratti Firmati</div>
-        <div class="be-bar-scale">
+      <!-- Spazio tra le due barre -->
+      <div style="height:12px;"></div>
+
+      <!-- Barra 2: Contratti firmati -->
+      <div class="be-card" id="be-card-2" style="display:none;">
+        <div class="be-card-title">Break-Even su Incasso Reale (Contratti)</div>
+        <div class="be-scale">
           <span>€ 0</span>
-          <span id="be-bar2-soglia">Break-Even: —</span>
+          <span id="be-soglia-2">Break-Even: —</span>
         </div>
-        <div class="be-bar-track">
-          <div class="be-bar-fill be-bar-fill-blue" id="be-bar2-fill" style="width:0%"></div>
-          <div class="be-bar-marker" id="be-bar2-marker" style="left:100%"></div>
+        <div class="be-track">
+          <div class="be-fill be-fill-blue" id="be-fill-2"></div>
         </div>
-        <div class="be-bar-footer" id="be-bar2-text">—</div>
+        <div class="be-label" id="be-label-2">—</div>
       </div>
 
-      <!-- Nessun dato -->
+      <!-- Stato vuoto -->
       <div id="be-empty" style="display:none;">
         <div class="empty-state">
-          <p>Nessun dato disponibile. Aggiungi costi fissi e registra movimenti per vedere l'analisi.</p>
+          <p>Aggiungi costi fissi e registra movimenti per vedere l'analisi break even.</p>
         </div>
       </div>
 
@@ -145,14 +145,9 @@
         <label class="form-label">Categoria *</label>
         <input type="text" class="form-control" id="costo-categoria" placeholder="Es. Struttura, IT, Personale…" list="categorie-list">
         <datalist id="categorie-list">
-          <option value="Struttura">
-          <option value="Personale">
-          <option value="IT">
-          <option value="Marketing">
-          <option value="Consulenze">
-          <option value="Utenze">
-          <option value="Assicurazioni">
-          <option value="Altro">
+          <option value="Struttura"><option value="Personale"><option value="IT">
+          <option value="Marketing"><option value="Consulenze"><option value="Utenze">
+          <option value="Assicurazioni"><option value="Altro">
         </datalist>
       </div>
 
@@ -164,7 +159,6 @@
         </div>
       </div>
 
-      <!-- Anteprima importo mensile -->
       <div id="costo-preview" style="display:none;margin-top:12px;padding:10px 14px;background:var(--primaryD);border-radius:var(--radius-sm);border:1px solid rgba(230,22,92,0.2);">
         <div style="font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);margin-bottom:4px;">Equivalente mensile</div>
         <div style="font-size:18px;font-weight:800;color:var(--primary);" id="costo-preview-val">—</div>
@@ -174,9 +168,7 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="window.__costiModule.closeModal()">Annulla</button>
       <button class="btn btn-primary" onclick="window.__costiModule.saveCosto()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         Salva
       </button>
     </div>
@@ -185,33 +177,30 @@
 
 
 <style>
-#table-costi-wrap .btn-icon {
-  width: 30px; height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.costo-inattivo td { opacity: .45; }
-.cat-struttura  { background: var(--secondaryD); color: var(--secondary); }
-.cat-personale  { background: var(--primaryD);   color: var(--primary);   }
-.cat-it         { background: rgba(16,185,129,.1); color: var(--green);   }
-.cat-marketing  { background: var(--amberD);      color: #b45309;         }
-.cat-altro      { background: var(--bg2);          color: var(--text1);   }
+/* Tabella */
+#table-costi-wrap .btn-icon { width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center; }
+.costo-inattivo td { opacity:.45; }
+.cat-struttura  { background:var(--secondaryD);color:var(--secondary); }
+.cat-personale  { background:var(--primaryD);color:var(--primary); }
+.cat-it         { background:rgba(16,185,129,.1);color:var(--green); }
+.cat-marketing  { background:var(--amberD);color:#b45309; }
+.cat-altro      { background:var(--bg2);color:var(--text1); }
 
 /* ── Break Even bars ─────────────────────────────────────── */
-.be-bar-card {
-  background: var(--bg);
+.be-card {
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 20px;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
-.be-bar-title {
-  font-size: 13px;
+.be-card-title {
+  font-size: 14px;
   font-weight: 700;
   color: var(--text0);
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
-.be-bar-scale {
+.be-scale {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
@@ -219,28 +208,26 @@
   color: var(--text2);
   margin-bottom: 8px;
 }
-.be-bar-track {
-  position: relative;
-  height: 22px;
-  background: var(--bg2);
-  border-radius: 11px;
+.be-track {
+  width: 100%;
+  height: 28px;
+  background: #e8ecf3;
+  border-radius: 14px;
   overflow: hidden;
 }
-.be-bar-fill {
+.be-fill {
   height: 100%;
-  background: var(--green);
-  border-radius: 11px;
-  transition: width .6s ease;
-  max-width: 100%;
+  width: 0%;
+  background: #10b981;
+  border-radius: 14px;
+  transition: width 0.7s cubic-bezier(.4,0,.2,1);
 }
-.be-bar-fill.sotto { background: var(--red); }
-.be-bar-fill-blue {
-  background: var(--secondary) !important;
-}
-.be-bar-fill-blue.sotto { background: rgba(248,113,113,0.8) !important; }
-.be-bar-footer {
-  margin-top: 10px;
-  font-size: 12px;
+.be-fill.sotto { background: #f87171; }
+.be-fill-blue  { background: #0f507b !important; }
+.be-fill-blue.sotto { background: #f87171 !important; }
+.be-label {
+  margin-top: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text1);
   text-align: center;
