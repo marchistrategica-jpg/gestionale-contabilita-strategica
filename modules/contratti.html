@@ -1,0 +1,242 @@
+<!-- ============================================================
+     MODULO: CONTRATTI
+     File: modules/contratti.html
+     JS:   js/modules/contratti.js (caricato dal router)
+
+     DIPENDENZE (già nella shell index.html):
+       - css/base.css   → tutte le classi usate qui
+       - css/icons.js   → ICONS.plus, edit, trash, search, close,
+                          filter, download, calendar, contract, check
+       - js/utils.js    → formatEuro, formatDate, toast, openModal,
+                          closeModal, initModalClose, confirmDelete
+     ============================================================ -->
+
+<!-- ── Header pagina ─────────────────────────────────────────── -->
+<div class="flex-center gap-8" style="justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;">
+  <div>
+    <h1 style="font-size:20px;font-weight:800;color:var(--text0);margin-bottom:2px;">Contratti</h1>
+    <p style="font-size:12px;color:var(--text2);font-weight:500;">
+      <span id="contratti-count">—</span> contratti totali
+    </p>
+  </div>
+  <div class="flex-center gap-8">
+    <!-- Bottone esporta (futuro) -->
+    <button class="btn btn-secondary" id="btn-export" style="display:none;">
+      <span id="ico-download"></span> Esporta
+    </button>
+    <!-- Bottone nuovo contratto -->
+    <button class="btn btn-primary" id="btn-nuovo">
+      <span id="ico-plus"></span> Nuovo contratto
+    </button>
+  </div>
+</div>
+
+<!-- ── Filtri: ricerca + chip stato ──────────────────────────── -->
+<div class="flex-center gap-8" style="margin-bottom:16px;flex-wrap:wrap;">
+
+  <!-- Barra di ricerca -->
+  <div class="search-box">
+    <span id="ico-search"></span>
+    <input
+      class="search-input"
+      type="text"
+      id="input-ricerca"
+      placeholder="Cerca per cliente o numero..."
+      autocomplete="off"
+    />
+  </div>
+
+  <!-- Chip filtro stato -->
+  <div class="flex-center gap-8" id="filtri-stato" style="flex-wrap:wrap;">
+    <button class="chip-stato active" data-stato="tutti">Tutti</button>
+    <button class="chip-stato" data-stato="attivo">Attivi</button>
+    <button class="chip-stato" data-stato="in_scadenza">In scadenza</button>
+    <button class="chip-stato" data-stato="scaduto">Scaduti</button>
+    <button class="chip-stato" data-stato="sospeso">Sospesi</button>
+    <button class="chip-stato" data-stato="concluso">Conclusi</button>
+  </div>
+
+</div>
+
+<!-- ── Tabella contratti ──────────────────────────────────────── -->
+<div class="table-wrap">
+
+  <!-- Loading iniziale -->
+  <div class="loading" id="contratti-loading">
+    <div class="spinner"></div>
+    Caricamento contratti...
+  </div>
+
+  <!-- Tabella (nascosta finché non ci sono dati) -->
+  <div id="contratti-table-wrap" style="display:none;">
+    <table id="contratti-table">
+      <thead>
+        <tr>
+          <th>Numero</th>
+          <th>Cliente</th>
+          <th>Data inizio</th>
+          <th>Data fine</th>
+          <th class="text-right">Valore</th>
+          <th>Stato</th>
+          <th class="text-right">Azioni</th>
+        </tr>
+      </thead>
+      <tbody id="tb-contratti"></tbody>
+    </table>
+  </div>
+
+  <!-- Stato vuoto -->
+  <div class="empty-state" id="contratti-empty" style="display:none;">
+    <span id="ico-contract-empty"></span>
+    <p>Nessun contratto trovato.</p>
+  </div>
+
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — Nuovo / Modifica contratto
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-contratto">
+  <div class="modal">
+
+    <div class="modal-header">
+      <span class="modal-title" id="modal-contratto-title">Nuovo contratto</span>
+      <button class="modal-close" id="modal-contratto-close">
+        <span id="ico-close-modal"></span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <form id="form-contratto" autocomplete="off">
+
+        <!-- Numero + Cliente -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="f-numero">Numero *</label>
+            <input class="form-control" type="text" id="f-numero"
+              placeholder="es. 2025-001" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f-cliente">Cliente *</label>
+            <input class="form-control" type="text" id="f-cliente"
+              placeholder="Nome cliente o azienda" required />
+          </div>
+        </div>
+
+        <!-- Data inizio + Data fine -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="f-data-inizio">Data inizio *</label>
+            <input class="form-control" type="date" id="f-data-inizio" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f-data-fine">Data fine *</label>
+            <input class="form-control" type="date" id="f-data-fine" required />
+          </div>
+        </div>
+
+        <!-- Valore + Stato -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="f-valore">Valore (€) *</label>
+            <input class="form-control" type="number" id="f-valore"
+              placeholder="0.00" min="0" step="0.01" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f-stato">Stato *</label>
+            <select class="form-control" id="f-stato" required>
+              <option value="attivo">Attivo</option>
+              <option value="sospeso">Sospeso</option>
+              <option value="concluso">Concluso</option>
+              <option value="scaduto">Scaduto</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Note -->
+        <div class="form-group">
+          <label class="form-label" for="f-note">Note</label>
+          <textarea class="form-control" id="f-note"
+            rows="3" placeholder="Note aggiuntive (opzionale)"
+            style="resize:vertical;"></textarea>
+        </div>
+
+        <!-- ID nascosto per la modifica -->
+        <input type="hidden" id="f-id" />
+
+      </form>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btn-annulla">Annulla</button>
+      <button class="btn btn-primary" id="btn-salva">
+        <span id="ico-check-modal"></span>
+        Salva contratto
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Stili specifici del modulo Contratti ───────────────────
+     Solo classi NON presenti in base.css.
+────────────────────────────────────────────────────────────── -->
+<style>
+/* Chip filtro stato */
+.chip-stato {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text1);
+  font-family: 'Montserrat', system-ui, sans-serif;
+  transition: all .15s;
+  letter-spacing: .02em;
+}
+.chip-stato:hover {
+  background: var(--bg2);
+  color: var(--text0);
+}
+.chip-stato.active {
+  background: var(--primaryD);
+  color: var(--primary);
+  border-color: rgba(230,22,92,0.3);
+}
+
+/* Riga in scadenza (entro 30 giorni) — bordo ambra a sinistra */
+.row-in-scadenza td:first-child {
+  border-left: 3px solid var(--amber);
+}
+.row-in-scadenza {
+  background: var(--amberD);
+}
+
+/* Sotto la data fine: mostra i giorni rimasti */
+.giorni-rimasti {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--amber);
+  margin-top: 2px;
+}
+
+/* Azioni riga tabella */
+.azioni-cell {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Textarea form-control */
+textarea.form-control {
+  min-height: 80px;
+}
+
+/* Responsive: su schermi piccoli le azioni si accatastano */
+@media (max-width: 860px) {
+  .azioni-cell { flex-direction: column; gap: 4px; }
+}
+</style>
