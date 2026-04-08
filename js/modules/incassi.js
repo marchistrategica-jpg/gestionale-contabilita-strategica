@@ -51,6 +51,16 @@ export async function init() {
   ])
 
   _initListeners()
+
+  // Controlla se c'è una rata pre-compilata da Contratti
+  const precompila = sessionStorage.getItem('incassi_precompila')
+  if (precompila) {
+    sessionStorage.removeItem('incassi_precompila')
+    try {
+      const dati = JSON.parse(precompila)
+      _apriModalPrecompilato(dati)
+    } catch(e) { console.warn('Errore precompila:', e) }
+  }
 }
 
 
@@ -599,6 +609,57 @@ function _impostaTipoModal(tipo) {
   document.querySelectorAll('.tipo-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.val === tipo)
   })
+}
+
+
+// ============================================================
+// APRI MODAL PRE-COMPILATO (da Contratti → Registra incasso)
+// ============================================================
+async function _apriModalPrecompilato(dati) {
+  // Aspetta che contratti e conti siano caricati
+  // (potrebbero non essere ancora pronti)
+  await Promise.all([_caricaContratti(), _caricaConti()])
+
+  document.getElementById('modal-titolo').textContent  = 'Registra incasso — rata contratto'
+  document.getElementById('mov-id').value              = ''
+  document.getElementById('mov-rata-ref').value        = dati.rata_ref || ''
+  document.getElementById('mov-data').value            = dati.data || new Date().toISOString().split('T')[0]
+  document.getElementById('mov-descrizione').value     = dati.descrizione || ''
+  document.getElementById('mov-categoria').value       = dati.categoria  || 'Contratto'
+  document.getElementById('mov-importo').value         = dati.importo    || ''
+  document.getElementById('mov-iva-rate').value        = dati.iva_rate   || 22
+  document.getElementById('mov-iva-display').textContent = formatEuro((dati.importo || 0) * (dati.iva_rate || 0) / 100)
+  document.getElementById('mov-note').value            = ''
+
+  // Seleziona contratto e carica le rate
+  const selCont = document.getElementById('mov-contratto-ref')
+  if (selCont && dati.contratto_ref) {
+    selCont.value = dati.contratto_ref
+    _caricaRateContratto(dati.contratto_ref)
+  }
+
+  // Seleziona conto
+  const selConto = document.getElementById('mov-conto')
+  if (selConto && dati.conto) selConto.value = dati.conto
+
+  _impostaTipoModal('incasso')
+
+  // Mostra sezione rata
+  const section = document.getElementById('mov-rata-section')
+  if (section) section.style.display = 'block'
+
+  // Seleziona la rata specifica dopo un breve delay
+  if (dati.rata_ref) {
+    setTimeout(() => {
+      const selRata = document.getElementById('mov-rata-select')
+      if (selRata) {
+        selRata.value = dati.rata_ref
+        _onRataSelezionata(dati.rata_ref)
+      }
+    }, 100)
+  }
+
+  openModal('modal-movimento')
 }
 
 
