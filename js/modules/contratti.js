@@ -205,6 +205,8 @@ function _renderTabella() {
     const rateTot         = rate.length
     const ratePagate      = rate.filter(r => r.stato === 'pagata').length
     const rateAttesaCount = rate.filter(r => r.stato === 'attesa').length
+    const rateAttesaFirst = rate.filter(r => r.stato === 'attesa')
+      .sort((a,b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))[0]?.id || ''
 
     // Prossima rata in attesa
     const prossima = rate
@@ -250,7 +252,7 @@ function _renderTabella() {
         <div class="azioni-cell" style="justify-content:flex-end;gap:6px;flex-wrap:wrap;">
           ${rateAttesaCount > 0 ? `
           <button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;"
-            onclick="window.__contrattiDettaglioRate('${c.id}')">
+            onclick="window.__contrattiApriPagamento('${rateAttesaFirst}','${c.id}')">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             Registra pagamento
           </button>` : ''}
@@ -346,8 +348,19 @@ function _collegaEventi() {
       if (e.target.id === 'modal-rate-dettaglio') _chiudiModalRate()
     })
 
-  // Espone funzione dettaglio rate al DOM
+  // Modal pagamento: close buttons
+  document.getElementById('modal-pag-close')
+    ?.addEventListener('click', () => document.getElementById('modal-pagamento').classList.remove('open'))
+  document.getElementById('modal-pag-annulla')
+    ?.addEventListener('click', () => document.getElementById('modal-pagamento').classList.remove('open'))
+  document.getElementById('modal-pag-conferma')
+    ?.addEventListener('click', _confermaPagamento)
+  document.getElementById('modal-pagamento')
+    ?.addEventListener('click', e => { if (e.target.id === 'modal-pagamento') e.target.classList.remove('open') })
+
+  // Espone funzioni al DOM
   window.__contrattiDettaglioRate = _apriDettaglioRate
+  window.__contrattiApriPagamento = _apriModalPagamento
 }
 
 
@@ -400,7 +413,7 @@ function _aggiungiRigaRata(dati = {}) {
     <select class="r-iva">${opzioniIva}</select>
     <input type="text"   class="r-ivaimp" readonly value="${dati.importo_iva ? _fmt2(dati.importo_iva) : ''}"/>
     <input type="text"   class="r-tot"   readonly value="${dati.importo_totale ? _fmt2(dati.importo_totale) : ''}"/>
-    <input type="date"   class="r-data"  value="${dati.data_prevista ? toInputDate(_toDate(dati.data_prevista)) : ''}"/>
+    <input type="date"   class="r-data"  placeholder="Data scadenza" value="${dati.data_prevista ? toInputDate(_toDate(dati.data_prevista)) : ''}"/>
     <button type="button" class="btn-rata-remove" title="Rimuovi rata">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
@@ -624,29 +637,29 @@ async function _salvaContratto() {
   const rateValide = []
 
   for (const riga of righeRata) {
-    const desc  = riga.querySelector('.r-desc')?.value.trim()
-    const imp   = parseFloat(riga.querySelector('.r-imp')?.value)
+    const desc   = riga.querySelector('.r-desc')?.value.trim()
+    const imp    = parseFloat(riga.querySelector('.r-imp')?.value)
     const ivaPct = parseFloat(riga.querySelector('.r-iva')?.value) || 0
-    const data  = riga.querySelector('.r-data')?.value
-    const rataId = riga.dataset.rataId || null // se modifica
+    const data   = riga.querySelector('.r-data')?.value
+    const rataId = riga.dataset.rataId || null
 
-    if (!data) { toast('Inserisci la data prevista per tutte le rate', 'error'); return }
+    if (!data) { toast('Inserisci la data di scadenza per tutte le rate', 'error'); return }
     if (!imp || imp <= 0) { toast('Inserisci un importo valido per tutte le rate', 'error'); return }
 
-    const rataIva  = imp * ivaPct / 100
-    const rataTot  = imp + rataIva
+    const rataIva = imp * ivaPct / 100
+    const rataTot = imp + rataIva
 
     rateValide.push({
       rataId,
       dati: {
-        descrizione:         desc || 'Rata',
-        importo_imponibile:  imp,
-        iva_rate:            ivaPct,
-        importo_iva:         rataIva,
-        importo_totale:      rataTot,
-        data_prevista:       toTimestamp(data),
-        data_pagamento:      null,
-        stato:               'attesa',
+        descrizione:        desc || 'Rata',
+        importo_imponibile: imp,
+        iva_rate:           ivaPct,
+        importo_iva:        rataIva,
+        importo_totale:     rataTot,
+        data_prevista:      toTimestamp(data),
+        data_pagamento:     null,
+        stato:              'attesa',
       }
     })
   }
@@ -679,16 +692,23 @@ async function _salvaContratto() {
       dati.cliente       = cliente
 
       if (rataId) {
-        // Aggiorna rata esistente
-        await collections.rate().doc(rataId).update(dati)
+        // Aggiorna rata esistente (mantieni stato pagata se già pagata)
+        const rataSnap = await collections.rate().doc(rataId).get()
+        const statoAttuale = rataSnap.data()?.stato
+        if (statoAttuale === 'pagata') {
+          // Non sovrascrivere data_pagamento o stato se già pagata
+          const { stato, data_pagamento, ...datiSenzaStato } = dati
+          await collections.rate().doc(rataId).update(datiSenzaStato)
+        } else {
+          await collections.rate().doc(rataId).update(dati)
+        }
       } else {
-        // Nuova rata
         dati.createdAt = FieldValue.serverTimestamp()
         await collections.rate().add(dati)
       }
     }
 
-    toast(id ? `Contratto aggiornato ✓` : `Contratto creato ✓`, 'success')
+    toast(id ? 'Contratto aggiornato ✓' : 'Contratto creato ✓', 'success')
     _chiudiModal()
     await _caricaDati()
     _renderTabella()
@@ -820,7 +840,102 @@ function _chiudiModalRate() {
 
 
 // ============================================================
-// SEGNA RATA COME PAGATA — crea automaticamente il movimento
+// MODAL PAGAMENTO — apri con dati rata pre-compilati
+// ============================================================
+function _apriModalPagamento(rataId, contrattoId) {
+  const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
+  const contratto = _contratti.find(x => x.id === contrattoId)
+  if (!r || !contratto) return
+
+  // Compila il modal con i dati della rata
+  document.getElementById('modal-pag-rata-id').value      = rataId
+  document.getElementById('modal-pag-contratto-id').value = contrattoId
+  document.getElementById('modal-pag-data').value          = new Date().toISOString().split('T')[0]
+  document.getElementById('modal-pag-title').textContent   = `Pagamento — ${_esc(contratto.cliente)}`
+  document.getElementById('modal-pag-desc').textContent    = r.descrizione || 'Rata'
+  document.getElementById('modal-pag-importo').textContent = formatEuro(r.importo_totale)
+  document.getElementById('modal-pag-scadenza').textContent =
+    r.data_prevista ? `Scadenza: ${formatDate(_toDate(r.data_prevista))}` : ''
+
+  const contoNome = contratto.conto_accredito_nome || '—'
+  document.getElementById('modal-pag-conto-info').textContent = contoNome
+
+  document.getElementById('modal-pagamento').classList.add('open')
+}
+
+// ============================================================
+// CONFERMA PAGAMENTO — salva movimento e aggiorna rata
+// ============================================================
+async function _confermaPagamento() {
+  const rataId      = document.getElementById('modal-pag-rata-id').value
+  const contrattoId = document.getElementById('modal-pag-contratto-id').value
+  const dataPag     = document.getElementById('modal-pag-data').value
+
+  if (!dataPag) { toast('Inserisci la data di pagamento', 'error'); return }
+
+  const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
+  const contratto = _contratti.find(x => x.id === contrattoId)
+  if (!r || !contratto) return
+
+  const btn = document.getElementById('modal-pag-conferma')
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvataggio...' }
+
+  try {
+    const ts = toTimestamp(dataPag)
+
+    // 1. Controlla se esiste già un movimento per questa rata
+    const movEsistente = await collections.movimenti()
+      .where('rata_ref', '==', rataId).limit(1).get()
+
+    if (movEsistente.empty) {
+      // 2. Crea il movimento in /movimenti
+      await collections.movimenti().add({
+        tipo:          'incasso',
+        importo:       r.importo_totale || 0,
+        data:          ts,
+        descrizione:   `${_esc(r.descrizione || 'Rata')} — ${_esc(contratto.cliente || '')}`,
+        categoria:     'Contratto',
+        conto:         contratto.conto_accredito || null,
+        conto_nome:    contratto.conto_accredito_nome || null,
+        iva_rate:      r.iva_rate || 0,
+        iva_importo:   r.importo_iva || 0,
+        contratto_ref: contrattoId,
+        rata_ref:      rataId,
+        createdAt:     FieldValue.serverTimestamp()
+      })
+    }
+
+    // 3. Segna la rata come pagata
+    await collections.rate().doc(rataId).update({
+      stato:          'pagata',
+      data_pagamento: ts
+    })
+
+    // 4. Aggiorna cache locale
+    if (r) { r.stato = 'pagata'; r.data_pagamento = ts }
+
+    // 5. Chiudi modal
+    document.getElementById('modal-pagamento').classList.remove('open')
+
+    toast(`✓ Pagamento di ${formatEuro(r.importo_totale)} registrato — tutto aggiornato!`, 'success')
+
+    // 6. Ricarica e aggiorna vista
+    await _caricaDati()
+    _renderTabella()
+
+  } catch (err) {
+    console.error('Errore conferma pagamento:', err)
+    toast('Errore nel salvataggio. Riprova.', 'error')
+  } finally {
+    if (btn) {
+      btn.disabled = false
+      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Conferma pagamento'
+    }
+  }
+}
+
+// ============================================================
+// SEGNA RATA COME PAGATA (dal pannello dettaglio rate)
 // ============================================================
 async function _pagaRata(rataId, contrattoId) {
   const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
