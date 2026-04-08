@@ -1,0 +1,216 @@
+<!-- ============================================================
+     MODULES/COMPENSI.HTML — Modulo Compensi Soci
+     Questo file viene iniettato nel div#main-content dal router.
+     Non è un documento HTML completo (niente DOCTYPE, html, head, body).
+     ============================================================ -->
+
+<div class="content">
+
+  <!-- ── HEADER PAGINA ─────────────────────────────────────── -->
+  <div class="flex-center mb-20" style="justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 style="font-size:20px;font-weight:800;color:var(--text0);line-height:1.2">Compensi Soci</h1>
+      <p style="font-size:12px;color:var(--text2);margin-top:3px">Gestione quote societarie e compensi</p>
+    </div>
+    <button class="btn btn-primary" id="btn-nuovo-compenso">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Nuovo compenso
+    </button>
+  </div>
+
+  <!-- ── SEZIONE SOCI ───────────────────────────────────────── -->
+  <div class="mb-20">
+    <div style="font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text2);margin-bottom:12px">
+      Soci
+    </div>
+    <!-- Le card vengono generate da JS in renderSociCards() -->
+    <div id="soci-grid" class="kpi-grid">
+      <div class="loading"><div class="spinner"></div> Caricamento soci...</div>
+    </div>
+  </div>
+
+  <!-- ── KPI COMPENSI ───────────────────────────────────────── -->
+  <div class="kpi-grid mb-20">
+    <div class="kpi-card primary">
+      <div class="kpi-label">Erogati YTD</div>
+      <div class="kpi-value" id="kpi-erogati">—</div>
+      <div class="kpi-sub">Anno corrente · solo pagati</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-label">Da erogare</div>
+      <div class="kpi-value" id="kpi-da-erogare">—</div>
+      <div class="kpi-sub">In attesa di pagamento</div>
+    </div>
+    <div class="kpi-card secondary">
+      <div class="kpi-label">Media per periodo</div>
+      <div class="kpi-value" id="kpi-media">—</div>
+      <div class="kpi-sub">Anno corrente</div>
+    </div>
+  </div>
+
+  <!-- ── TABELLA COMPENSI ───────────────────────────────────── -->
+  <div class="table-wrap">
+
+    <!-- Intestazione tabella con filtri -->
+    <div class="table-head">
+      <span class="card-title">Registro Compensi</span>
+      <div class="flex-center gap-8" style="flex-wrap:wrap">
+
+        <!-- Filtro anno -->
+        <select class="form-control" id="filtro-anno" style="width:110px">
+          <!-- Opzioni generate da JS in popolaFiltri() -->
+        </select>
+
+        <!-- Filtro socio -->
+        <select class="form-control" id="filtro-socio" style="width:170px">
+          <option value="">Tutti i soci</option>
+          <!-- Opzioni generate da JS in popolaFiltri() -->
+        </select>
+
+      </div>
+    </div>
+
+    <!-- Corpo tabella — generato da renderTabella() -->
+    <div id="tabella-compensi-wrap">
+      <div class="loading"><div class="spinner"></div> Caricamento...</div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ============================================================
+     MODAL — NUOVO / MODIFICA COMPENSO
+     ============================================================ -->
+<div class="modal-overlay" id="modal-compenso">
+  <div class="modal">
+
+    <div class="modal-header">
+      <span class="modal-title" id="modal-compenso-title">Nuovo compenso</span>
+      <button class="modal-close" id="modal-compenso-close" title="Chiudi">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- ID nascosto per la modalità modifica -->
+      <input type="hidden" id="compenso-id">
+
+      <!-- Select socio -->
+      <div class="form-group">
+        <label class="form-label">Socio *</label>
+        <select class="form-control" id="compenso-socio">
+          <option value="">Seleziona socio...</option>
+          <!-- Opzioni generate da JS in popolaFiltri() -->
+        </select>
+      </div>
+
+      <!-- Box calcolo automatico — visibile solo quando un socio è selezionato -->
+      <div class="card mb-16" id="calc-box" style="display:none;background:var(--bg2)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            Calcolo automatico quote
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="form-label">Totale da distribuire (€)</label>
+            <input type="number" class="form-control" id="totale-distribuibile"
+              placeholder="es. 10000" min="0" step="0.01">
+          </div>
+          <!-- Anteprima quote per ogni socio — aggiornata live da aggiornaSuggerimentoQuote() -->
+          <div id="quote-preview"></div>
+        </div>
+      </div>
+
+      <!-- Importo e Periodo sulla stessa riga -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Importo (€) *</label>
+          <input type="number" class="form-control" id="compenso-importo"
+            placeholder="0,00" min="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Periodo *</label>
+          <input type="text" class="form-control" id="compenso-periodo"
+            placeholder="es. Gennaio 2025">
+        </div>
+      </div>
+
+      <!-- Data pagamento e Stato sulla stessa riga -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Data pagamento</label>
+          <input type="date" class="form-control" id="compenso-data">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Stato *</label>
+          <select class="form-control" id="compenso-stato">
+            <option value="da_pagare">Da pagare</option>
+            <option value="pagata">Pagata</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Note -->
+      <div class="form-group">
+        <label class="form-label">Note</label>
+        <textarea class="form-control" id="compenso-note" rows="2"
+          placeholder="Note opzionali..." style="resize:vertical"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btn-cancel-compenso">Annulla</button>
+      <button class="btn btn-primary" id="btn-salva-compenso">Salva</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     MODAL — MODIFICA QUOTA SOCIO
+     ============================================================ -->
+<div class="modal-overlay" id="modal-quota">
+  <div class="modal" style="max-width:380px">
+
+    <div class="modal-header">
+      <span class="modal-title">Modifica quota societaria</span>
+      <button class="modal-close" id="modal-quota-close" title="Chiudi">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- ID socio nascosto -->
+      <input type="hidden" id="quota-socio-id">
+
+      <div class="form-group">
+        <label class="form-label">Socio</label>
+        <!-- Campo disabilitato — solo visualizzazione -->
+        <input type="text" class="form-control" id="quota-socio-nome" disabled
+          style="background:var(--bg2);color:var(--text1)">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Nuova quota (%)</label>
+        <input type="number" class="form-control" id="quota-valore"
+          min="0" max="100" step="0.1" placeholder="es. 50">
+        <!-- Avviso somma quote — aggiornato da JS -->
+        <div id="quota-avviso" style="margin-top:6px;font-size:11px;color:var(--text2)"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btn-cancel-quota">Annulla</button>
+      <button class="btn btn-primary" id="btn-salva-quota">Salva quota</button>
+    </div>
+  </div>
+</div>
