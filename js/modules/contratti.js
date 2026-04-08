@@ -847,6 +847,36 @@ function _apriDettaglioRate(contrattoId) {
   document.getElementById('modal-rate-dettaglio').classList.add('open')
 }
 
+// Fallback pagamento senza modal (se contratti.html non aggiornato)
+async function _confermaPagamentoDirectly(rataId, contrattoId, dataPag) {
+  const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
+  const contratto = _contratti.find(x => x.id === contrattoId)
+  if (!r || !contratto || !dataPag) return
+  try {
+    const ts = toTimestamp(dataPag)
+    const movEsistente = await collections.movimenti().where('rata_ref', '==', rataId).limit(1).get()
+    if (movEsistente.empty) {
+      await collections.movimenti().add({
+        tipo: 'incasso', importo: r.importo_totale || 0, data: ts,
+        descrizione: `${r.descrizione || 'Rata'} — ${contratto.cliente || ''}`,
+        categoria: 'Contratto', conto: contratto.conto_accredito || null,
+        conto_nome: contratto.conto_accredito_nome || null,
+        iva_rate: r.iva_rate || 0, iva_importo: r.importo_iva || 0,
+        contratto_ref: contrattoId, rata_ref: rataId,
+        createdAt: FieldValue.serverTimestamp()
+      })
+    }
+    await collections.rate().doc(rataId).update({ stato: 'pagata', data_pagamento: ts })
+    if (r) { r.stato = 'pagata'; r.data_pagamento = ts }
+    toast(`✓ Pagamento di ${formatEuro(r.importo_totale)} registrato!`, 'success')
+    await _caricaDati()
+    _renderTabella()
+  } catch(err) {
+    console.error(err)
+    toast('Errore nel salvataggio', 'error')
+  }
+}
+
 function _chiudiModalRate() {
   document.getElementById('modal-rate-dettaglio')?.classList.remove('open')
 }
@@ -856,9 +886,26 @@ function _chiudiModalRate() {
 // MODAL PAGAMENTO — apri con dati rata pre-compilati
 // ============================================================
 function _apriModalPagamento(rataId, contrattoId) {
+  if (!rataId) {
+    toast('Nessuna rata in attesa trovata', 'error')
+    return
+  }
   const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
   const contratto = _contratti.find(x => x.id === contrattoId)
-  if (!r || !contratto) return
+  if (!r || !contratto) {
+    toast('Rata o contratto non trovato. Ricarica la pagina.', 'error')
+    return
+  }
+
+  const modal = document.getElementById('modal-pagamento')
+  if (!modal) {
+    // Fallback: se il modal non esiste nel DOM (HTML non aggiornato),
+    // usa una semplice finestra di dialogo
+    const data = prompt(`Pagamento di ${formatEuro(r.importo_totale)} — ${r.descrizione}
+Inserisci la data di pagamento (YYYY-MM-DD):`, new Date().toISOString().split('T')[0])
+    if (data) _confermaPagamentoDirectly(rataId, contrattoId, data)
+    return
+  }
 
   // Compila il modal con i dati della rata
   document.getElementById('modal-pag-rata-id').value      = rataId
