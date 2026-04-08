@@ -440,10 +440,9 @@ async function salvaCompenso() {
       toast('Compenso aggiunto', 'success')
     }
 
-    // Crea movimento automatico se stato='pagata' e non era già pagata
-    if (stato === 'pagata' && !eraGiaPagata && savedId) {
-      const ts = data ? toTimestamp(data) : FieldValue.serverTimestamp()
-      await collections.movimenti().add({
+    // Crea O aggiorna il movimento collegato
+    if (stato === 'pagata') {
+      const movDati = {
         tipo:         'pagamento',
         importo:      importo || 0,
         data:         data ? toTimestamp(data) : toTimestamp(new Date().toISOString().split('T')[0]),
@@ -455,9 +454,19 @@ async function salvaCompenso() {
         iva_rate:     0,
         iva_importo:  0,
         compenso_ref: savedId,
-        createdAt:    FieldValue.serverTimestamp()
-      })
-      toast(`✓ Compenso registrato in Incassi & Pagamenti automaticamente`, 'success', 5000)
+      }
+
+      if (eraGiaPagata && vecchio?.movimento_ref) {
+        // Aggiorna movimento esistente
+        await collections.movimenti().doc(vecchio.movimento_ref).update(movDati)
+        toast('✓ Compenso e movimento in Incassi aggiornati', 'success', 4000)
+      } else if (!eraGiaPagata) {
+        // Crea nuovo movimento e salva il riferimento sul compenso
+        movDati.createdAt = FieldValue.serverTimestamp()
+        const movRef = await collections.movimenti().add(movDati)
+        await collections.compensi().doc(savedId).update({ movimento_ref: movRef.id })
+        toast('✓ Compenso registrato in Incassi & Pagamenti automaticamente', 'success', 5000)
+      }
     }
 
     closeModal('modal-compenso')
@@ -515,7 +524,7 @@ async function pagaCompenso(id) {
     })
 
     // 2. Crea movimento automatico in /movimenti (pagamento in uscita)
-    await collections.movimenti().add({
+    const movRef = await collections.movimenti().add({
       tipo:         'pagamento',
       importo:      c.importo || 0,
       data:         oggiTs,
@@ -529,6 +538,8 @@ async function pagaCompenso(id) {
       compenso_ref: id,
       createdAt:    FieldValue.serverTimestamp()
     })
+    // Salva riferimento al movimento sul compenso
+    await collections.compensi().doc(id).update({ movimento_ref: movRef.id })
 
     toast('Compenso pagato ✓ — movimento registrato in Incassi', 'success')
     await caricaDati()
