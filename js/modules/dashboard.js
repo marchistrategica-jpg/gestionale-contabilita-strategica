@@ -36,11 +36,9 @@ export async function init () {
     // poi aspetta che siano tutte completate. Più veloce che
     // farle una alla volta in sequenza.
     const [snapMov, snapContratti, snapConti] = await Promise.all([
-      db.collection(collections.movimenti)
-        .orderBy('data', 'desc')   // ordina per data decrescente (più recenti prima)
-        .get(),
-      db.collection(collections.contratti).get(),
-      db.collection(collections.conti).get(),
+      collections.movimenti().orderBy('data', 'desc').get(),
+      collections.contratti().get(),
+      collections.conti().get(),
     ])
 
     // Converte gli snapshot Firestore in array JS semplici
