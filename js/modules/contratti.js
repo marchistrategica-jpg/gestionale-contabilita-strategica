@@ -37,6 +37,7 @@ let _filtroStato  = 'tutti'
 let _testoRicerca = ''
 
 // Rate temporanee nel form (prima del salvataggio)
+let _conti          = []   // conti correnti Firestore
 let _rateForm       = []   // array di oggetti { tempId, id?, descrizione, imponibile, iva_rate, data_prevista }
 let _rateEliminate  = []   // id di rate esistenti da cancellare al salvataggio
 let _contrattoInEdit = null // id contratto in modifica (null = nuovo)
@@ -76,10 +77,25 @@ async function _caricaDati() {
 
   try {
     // Carica contratti e rate in parallelo
-    const [snapC, snapR] = await Promise.all([
+    const [snapC, snapR, snapConti] = await Promise.all([
       collections.contratti().orderBy('data_inizio', 'desc').get(),
-      collections.rate().orderBy('data_prevista', 'asc').get()
+      collections.rate().orderBy('data_prevista', 'asc').get(),
+      collections.conti().orderBy('nome').get()
     ])
+
+    _conti = snapConti.docs.map(d => ({ id: d.id, ...d.data() }))
+
+    // Popola select conto nel form
+    const selConto = document.getElementById('f-conto-accredito')
+    if (selConto) {
+      selConto.innerHTML = '<option value="">— Seleziona il conto —</option>'
+      _conti.forEach(ct => {
+        const opt = document.createElement('option')
+        opt.value = ct.id
+        opt.textContent = `${ct.nome}${ct.banca ? ' — ' + ct.banca : ''}`
+        selConto.appendChild(opt)
+      })
+    }
 
     _contratti = snapC.docs.map(d => ({ id: d.id, ...d.data() }))
 
@@ -226,6 +242,7 @@ function _renderTabella() {
       <td class="text-right" style="font-size:12px;">${formatEuro(c.importo_imponibile)}</td>
       <td class="text-right" style="font-weight:700;color:var(--text0);">${formatEuro(c.importo_totale)}</td>
       <td class="text-center">${badgeRate}</td>
+      <td style="font-size:11px;color:var(--text1);">${_esc(c.conto_accredito_nome || '—')}</td>
       <td>${prossimaHtml}</td>
       <td>${_badgeStato(statoComp)}</td>
       <td>
@@ -496,6 +513,7 @@ function _apriModalNuovo() {
   document.getElementById('f-totale').value      = ''
   document.getElementById('f-modalita').value    = ''
   document.getElementById('f-note').value        = ''
+  document.getElementById('f-conto-accredito').value = ''
   document.getElementById('modal-contratto-title').textContent = 'Nuovo contratto'
 
   // Pulisce rate container
@@ -523,6 +541,7 @@ function _apriModalModifica(c) {
   document.getElementById('f-totale').value      = c.importo_totale ? _fmt2(c.importo_totale) : ''
   document.getElementById('f-modalita').value    = c.modalita_pagamento || ''
   document.getElementById('f-note').value        = c.note        || ''
+  document.getElementById('f-conto-accredito').value = c.conto_accredito || ''
   document.getElementById('modal-contratto-title').textContent = `Modifica — ${c.cliente}`
 
   // Popola rate
@@ -576,6 +595,9 @@ async function _salvaContratto() {
   const ivaImporto  = imponibile * ivaRate / 100
   const totale      = imponibile + ivaImporto
 
+  const contoAccredito = document.getElementById('f-conto-accredito')?.value || null
+  const contoObj = _conti.find(ct => ct.id === contoAccredito)
+
   const datiContratto = {
     cliente,
     data_inizio:          toTimestamp(dataInizio),
@@ -586,6 +608,8 @@ async function _salvaContratto() {
     importo_totale:       totale,
     modalita_pagamento:   modalita || null,
     note:                 note || null,
+    conto_accredito:      contoAccredito || null,
+    conto_accredito_nome: contoObj?.nome || null,
   }
 
   // Legge le righe rata dal DOM
