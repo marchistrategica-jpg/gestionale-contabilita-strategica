@@ -204,9 +204,17 @@ function renderConti() {
 // Calcola saldo reale: saldo_iniziale + somma movimenti del conto
 function calcolaSaldo(conto) {
   const base = Number(conto.saldo_iniziale) || 0
+  const nomeNorm = (conto.nome || '').toLowerCase().trim()
 
   const delta = tuttiMovimenti
-    .filter(m => m.conto === conto.id || m.conto === conto.nome)
+    .filter(m => {
+      if (!m.conto && !m.conto_nome) return false
+      if (m.conto === conto.id) return true
+      if (m.conto === conto.nome) return true
+      if (m.conto_nome === conto.nome) return true
+      const mc = (m.conto || m.conto_nome || '').toLowerCase().trim()
+      return mc === nomeNorm
+    })
     .reduce((acc, m) => {
       const imp = Number(m.importo) || 0
       return acc + (m.tipo === 'incasso' ? imp : -imp)
