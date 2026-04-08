@@ -435,19 +435,45 @@ async function salvaProvvigione() {
     : null
 
   try {
+    // Stato precedente (per capire se è cambiato a 'pagata')
+    const vecchiaProvv = id ? tutteProvvigioni.find(x => x.id === id) : null
+    const eraGiaPagata = vecchiaProvv?.stato === 'pagata'
+
+    let savedId = id
     if (id) {
-      // Modifica documento esistente
       await collections.provvigioni().doc(id).update(doc)
       toast('Provvigione aggiornata')
-      // Aggiorna in locale per evitare un fetch completo
       const idx = tutteProvvigioni.findIndex(x => x.id === id)
       if (idx > -1) tutteProvvigioni[idx] = { id, ...doc }
     } else {
-      // Nuovo documento
       doc.createdAt = firebase.firestore.FieldValue.serverTimestamp()
       const ref = await collections.provvigioni().add(doc)
+      savedId = ref.id
       toast('Provvigione aggiunta')
       tutteProvvigioni.unshift({ id: ref.id, ...doc })
+    }
+
+    // Crea movimento automatico se stato='pagata' e non era già pagata prima
+    if (stato === 'pagata' && !eraGiaPagata && savedId) {
+      const ts = doc.data_pagamento || firebase.firestore.Timestamp.fromDate(new Date())
+      const contoId  = doc.contratto_ref ? null : (document.getElementById('fp-conto')?.value || null)
+      const contoObj = tuttiConti.find(ct => ct.id === (doc.conto_pagamento || contoId))
+      await collections.movimenti().add({
+        tipo:            'pagamento',
+        importo:         importo || 0,
+        data:            ts,
+        descrizione:     `Provvigione — ${agente}`,
+        categoria:       'Provvigione',
+        note:            doc.cliente ? `Cliente: ${doc.cliente}` : null,
+        conto:           doc.conto_pagamento || null,
+        conto_nome:      doc.conto_pagamento_nome || null,
+        iva_rate:        0,
+        iva_importo:     0,
+        contratto_ref:   doc.contratto_ref || null,
+        provvigione_ref: savedId,
+        createdAt:       FieldValue.serverTimestamp()
+      })
+      toast(`✓ Movimento di €${importo.toLocaleString('it-IT',{minimumFractionDigits:2})} registrato in Incassi & Pagamenti`, 'success', 5000)
     }
 
     closeModal('modal-prov')
@@ -513,7 +539,12 @@ async function segnaComePageta(id) {
     p.stato          = 'pagata'
     p.data_pagamento = oggiTs
 
-    toast('Provvigione pagata ✓ — movimento registrato in Incassi', 'success')
+    // Toast prominente con durata più lunga
+    toast(`✓ Provvigione pagata! Movimento di €${(p.importo||0).toLocaleString('it-IT',{minimumFractionDigits:2})} registrato automaticamente in Incassi & Pagamenti`, 'success', 6000)
+
+    // Banner informativo visibile nella pagina
+    _mostraBannerConferma(p)
+
     aggiornaVista()
 
   } catch (err) {
@@ -581,6 +612,68 @@ function oggi() {
 }
 
 // Escape HTML per sicurezza nei template string
+
+
+// ── BANNER CONFERMA PAGAMENTO ─────────────────────────────────
+function _mostraBannerConferma(p) {
+  // Rimuovi banner precedente se esiste
+  document.getElementById('banner-pagamento')?.remove()
+
+  const banner = document.createElement('div')
+  banner.id = 'banner-pagamento'
+  banner.style.cssText = `
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffffff;
+    border: 2px solid var(--green);
+    border-radius: 12px;
+    padding: 16px 24px;
+    box-shadow: 0 8px 32px rgba(16,185,129,0.2);
+    z-index: 9999;
+    min-width: 360px;
+    max-width: 500px;
+    font-family: Montserrat, sans-serif;
+    animation: slideDown 0.3s ease;
+  `
+  banner.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <div style="width:36px;height:36px;border-radius:50%;background:rgba(16,185,129,0.1);
+                  display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:800;color:var(--text0);margin-bottom:4px;">
+          Provvigione pagata!
+        </div>
+        <div style="font-size:12px;color:var(--text1);line-height:1.5;">
+          Il pagamento di <strong>€${(p.importo||0).toLocaleString('it-IT',{minimumFractionDigits:2})}</strong>
+          all'agente <strong>${p.agente||''}</strong> è stato registrato automaticamente in
+          <strong>Incassi & Pagamenti</strong> come uscita.
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px;">
+          Non devi fare nulla in più. Vai su Incassi → chip "Tutti" per verificare.
+        </div>
+      </div>
+      <button onclick="document.getElementById('banner-pagamento').remove()"
+        style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:18px;
+               padding:0;line-height:1;flex-shrink:0;">✕</button>
+    </div>
+  `
+
+  document.body.appendChild(banner)
+
+  // Si chiude automaticamente dopo 8 secondi
+  setTimeout(() => {
+    if (banner.parentNode) {
+      banner.style.opacity = '0'
+      banner.style.transition = 'opacity 0.3s'
+      setTimeout(() => banner.remove(), 300)
+    }
+  }, 8000)
+}
+
 function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
