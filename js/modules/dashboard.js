@@ -39,14 +39,24 @@ export async function init() {
   const elRateSub = document.getElementById('kpi-rate-mese-sub')
   if (elRateSub) elRateSub.textContent = `Rate in attesa — ${_nomeMeseCorrente()}`
 
+  // Bottone refresh
+  document.getElementById('btn-dash-refresh')?.addEventListener('click', () => _caricaDati())
+
+  await _caricaDati()
+}
+
+async function _caricaDati() {
+  // Mostra timestamp ultimo aggiornamento
+  const elUp = document.getElementById('dash-last-update')
+  if (elUp) elUp.textContent = 'Aggiornamento in corso...'
+
   try {
-    // Legge tutte le collezioni in parallelo (cache:false forza dati freschi)
-    const opts = { source: 'server' }
+    // Legge tutte le collezioni in parallelo
     const [snapMov, snapContratti, snapConti, snapRate] = await Promise.all([
-      collections.movimenti().orderBy('data', 'desc').get(opts),
-      collections.contratti().get(opts),
-      collections.conti().get(opts),
-      collections.rate().get(opts),
+      collections.movimenti().orderBy('data', 'desc').get(),
+      collections.contratti().get(),
+      collections.conti().get(),
+      collections.rate().get(),
     ])
 
     const movimenti  = snapMov.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -59,12 +69,22 @@ export async function init() {
     _popolaMovimenti(movimenti)
     _popolaRateScadenza(rate, contratti)
 
+    // Timestamp aggiornamento
+    const elUp = document.getElementById('dash-last-update')
+    if (elUp) {
+      const ora = new Date().toLocaleTimeString('it-IT', { hour:'2-digit', minute:'2-digit' })
+      elUp.textContent = `Aggiornato alle ${ora}`
+    }
+
   } catch (err) {
     console.error('Dashboard: errore Firebase →', err)
+    const elUp = document.getElementById('dash-last-update')
+    if (elUp) elUp.textContent = `Errore: ${err.message}`
     const grid = document.getElementById('kpi-grid')
     if (grid) grid.innerHTML = `
       <div class="empty-state" style="grid-column:1/-1">
-        <p>Errore nel caricamento dei dati. Controlla la connessione Firebase.</p>
+        <p>Errore nel caricamento dei dati.</p>
+        <p style="font-size:11px;margin-top:6px;color:var(--text2);">${err.message}</p>
       </div>`
   }
 }
@@ -80,14 +100,16 @@ function _popolaKpi(movimenti, contratti, conti, rate) {
   const meseCorrente = oggi.getMonth()
 
   // ── KPI 1: Valore contratti (tutti tranne conclusi) ──────
+  // Valore totale: include retrocompatibilità con campo 'valore' (vecchi contratti)
   const valoreContratti = contratti
     .filter(c => c.stato !== 'concluso')
-    .reduce((acc, c) => acc + (c.importo_totale || 0), 0)
+    .reduce((acc, c) => acc + (c.importo_totale || c.valore || 0), 0)
 
-  const nCorrente = contratti.filter(c => c.stato === 'corrente').length
+  // Conta contratti attivi: include sia il nuovo 'corrente' sia il vecchio 'attivo' (retrocompatibilità)
+  const nCorrente = contratti.filter(c => c.stato !== 'concluso' && c.stato !== 'sospeso').length
 
   _setKpi('kpi-valore-contratti', formatEuro(valoreContratti))
-  _setKpi('kpi-valore-contratti-sub', `${contratti.filter(c => c.stato !== 'concluso').length} contratti attivi`)
+  _setKpi('kpi-valore-contratti-sub', `${contratti.filter(c => c.stato !== 'concluso').length} contratti in corso`)
 
   // ── KPI 2: Incassi del mese (da movimenti) ──────────────
   const incassiMese = movimenti
