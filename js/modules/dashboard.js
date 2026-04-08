@@ -1,60 +1,59 @@
 /**
  * ============================================================
- * MODULO: Dashboard — Logica JS
+ * MODULO: Dashboard v2
  * File:   js/modules/dashboard.js
  *
- * Esportato: export async function init()
- * Chiamato da router.js ogni volta che si naviga su #dashboard
+ * KPI aggiornati:
+ *   1. Valore contratti     → somma importo_totale di tutti i contratti correnti
+ *   2. Incassi del mese     → movimenti tipo='incasso' mese corrente (IVA inclusa)
+ *   3. Incassi programmati  → rate stato='attesa' con data_prevista nel mese corrente
+ *   4. Contratti attivi     → contratti con stato='corrente'
+ *   5+. Saldo per conto     → un KPI card per ogni conto (Revolut, CREDEM, ecc.)
  *
- * DIPENDENZE:
- *   js/firebase-config.js → db, collections
- *   js/utils.js           → formatEuro, formatDate, formatDateShort
- *   Chart.js              → caricato da dashboard.html via CDN
+ * Sezione "Rate in scadenza" → rate stato='attesa' con data_prevista entro 60gg
  * ============================================================
  */
 
-import { db, collections }                    from '../../js/firebase-config.js'
-import { formatEuro, formatDate, formatDateShort } from '../../js/utils.js'
+import { collections }                              from '../../js/firebase-config.js'
+import { formatEuro, formatDate, formatDateShort }  from '../../js/utils.js'
 
-// Riferimento globale al grafico — serve per distruggerlo
-// se l'utente naviga via e torna (evita grafici sovrapposti)
+// Riferimento globale al grafico
 let graficoMensile = null
 
 
 // ============================================================
-// INIT — punto di ingresso chiamato dal router
+// INIT
 // ============================================================
-export async function init () {
+export async function init() {
 
-  // Aggiorna il sotto-titolo del KPI incassi col nome del mese corrente
+  // Sotto-titolo KPI incassi con nome mese corrente
   const elSub = document.getElementById('kpi-incassi-sub')
   if (elSub) elSub.textContent = _nomeMeseCorrente()
 
+  const elRateSub = document.getElementById('kpi-rate-mese-sub')
+  if (elRateSub) elRateSub.textContent = `Rate in attesa — ${_nomeMeseCorrente()}`
+
   try {
-    // ── Lettura parallela da Firestore ──────────────────────
-    // Promise.all fa partire tutte e tre le richieste insieme,
-    // poi aspetta che siano tutte completate. Più veloce che
-    // farle una alla volta in sequenza.
-    const [snapMov, snapContratti, snapConti] = await Promise.all([
+    // Legge tutte le collezioni in parallelo
+    const [snapMov, snapContratti, snapConti, snapRate] = await Promise.all([
       collections.movimenti().orderBy('data', 'desc').get(),
       collections.contratti().get(),
       collections.conti().get(),
+      collections.rate().get(),
     ])
 
-    // Converte gli snapshot Firestore in array JS semplici
     const movimenti  = snapMov.docs.map(d => ({ id: d.id, ...d.data() }))
     const contratti  = snapContratti.docs.map(d => ({ id: d.id, ...d.data() }))
     const conti      = snapConti.docs.map(d => ({ id: d.id, ...d.data() }))
+    const rate       = snapRate.docs.map(d => ({ id: d.id, ...d.data() }))
 
-    // ── Popola le sezioni ───────────────────────────────────
-    _popolaKpi(movimenti, contratti, conti)
+    _popolaKpi(movimenti, contratti, conti, rate)
     _popolaGrafico(movimenti)
     _popolaMovimenti(movimenti)
-    _popolaScadenze(contratti)
+    _popolaRateScadenza(rate, contratti)
 
   } catch (err) {
     console.error('Dashboard: errore Firebase →', err)
-    // Mostra un messaggio d'errore nella griglia KPI
     const grid = document.getElementById('kpi-grid')
     if (grid) grid.innerHTML = `
       <div class="empty-state" style="grid-column:1/-1">
@@ -67,67 +66,111 @@ export async function init () {
 // ============================================================
 // SEZIONE 1 — KPI Cards
 // ============================================================
-function _popolaKpi (movimenti, contratti, conti) {
+function _popolaKpi(movimenti, contratti, conti, rate) {
 
-  const oggi        = new Date()
+  const oggi         = new Date()
   const annoCorrente = oggi.getFullYear()
-  const meseCorrente = oggi.getMonth()   // 0 = gennaio
+  const meseCorrente = oggi.getMonth()
 
-  // KPI 1: Fatturato YTD — somma incassi dall'1 gennaio ad oggi
-  const fatturatoYtd = movimenti
-    .filter(m => m.tipo === 'incasso' && _annoOf(m.data) === annoCorrente)
-    .reduce((acc, m) => acc + (m.importo || 0), 0)
-  _setKpi('kpi-fatturato', formatEuro(fatturatoYtd))
+  // ── KPI 1: Valore contratti (tutti tranne conclusi) ──────
+  const valoreContratti = contratti
+    .filter(c => c.stato !== 'concluso')
+    .reduce((acc, c) => acc + (c.importo_totale || 0), 0)
 
-  // KPI 2: Incassi mese corrente
+  const nCorrente = contratti.filter(c => c.stato === 'corrente').length
+
+  _setKpi('kpi-valore-contratti', formatEuro(valoreContratti))
+  _setKpi('kpi-valore-contratti-sub', `${contratti.filter(c => c.stato !== 'concluso').length} contratti attivi`)
+
+  // ── KPI 2: Incassi del mese (da movimenti) ──────────────
   const incassiMese = movimenti
     .filter(m => m.tipo === 'incasso'
               && _annoOf(m.data) === annoCorrente
               && _meseOf(m.data) === meseCorrente)
     .reduce((acc, m) => acc + (m.importo || 0), 0)
+
   _setKpi('kpi-incassi', formatEuro(incassiMese))
 
-  // KPI 3: Pagamenti mese corrente
-  const pagamentiMese = movimenti
-    .filter(m => m.tipo === 'pagamento'
-              && _annoOf(m.data) === annoCorrente
-              && _meseOf(m.data) === meseCorrente)
-    .reduce((acc, m) => acc + (m.importo || 0), 0)
-  _setKpi('kpi-pagamenti', formatEuro(pagamentiMese))
+  // ── KPI 3: Rate programmate questo mese (in attesa) ─────
+  const rateMese = rate
+    .filter(r => r.stato === 'attesa'
+              && _annoOf(r.data_prevista) === annoCorrente
+              && _meseOf(r.data_prevista) === meseCorrente)
 
-  // KPI 4: Contratti attivi
-  const nAttivi = contratti.filter(c => c.stato === 'attivo').length
-  _setKpi('kpi-contratti', String(nAttivi))
+  const totRateMese = rateMese.reduce((acc, r) => acc + (r.importo_totale || 0), 0)
+  _setKpi('kpi-rate-mese', formatEuro(totRateMese))
+  _setKpi('kpi-rate-mese-sub', `${rateMese.length} rata${rateMese.length !== 1 ? 'e' : ''} in attesa`)
 
-  // KPI 5: Saldo totale conti
-  // Parte dai saldi iniziali, poi somma incassi e sottrae pagamenti
-  const saldoIniziale = conti.reduce((acc, c) => acc + (c.saldo_iniziale || 0), 0)
-  const delta = movimenti.reduce((acc, m) => {
-    if (m.tipo === 'incasso')   return acc + (m.importo || 0)
-    if (m.tipo === 'pagamento') return acc - (m.importo || 0)
-    return acc
-  }, 0)
-  _setKpi('kpi-saldo', formatEuro(saldoIniziale + delta))
+  // ── KPI 4: Contratti correnti ───────────────────────────
+  _setKpi('kpi-contratti', String(nCorrente))
+
+  // ── KPI 5+: Saldo per singolo conto ────────────────────
+  _renderKpiConti(conti, movimenti)
+}
+
+
+// ============================================================
+// KPI CONTI — un card per ogni conto corrente
+// ============================================================
+function _renderKpiConti(conti, movimenti) {
+  const container = document.getElementById('kpi-conti-container')
+  if (!container) return
+
+  if (!conti.length) {
+    container.innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-label">Saldo conti</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub">Nessun conto registrato</div>
+      </div>`
+    return
+  }
+
+  container.innerHTML = conti.map(conto => {
+    const saldo = _calcolaSaldoConto(conto, movimenti)
+    const coloreSaldo = saldo >= 0 ? 'var(--green)' : 'var(--red)'
+    // Colore card in base al tipo di conto (verde per positivo, rosso per negativo)
+    const cardClass = saldo >= 0 ? 'kpi-card green' : 'kpi-card red'
+
+    return `
+      <div class="${cardClass}">
+        <div class="kpi-label">${_esc(conto.nome || conto.banca || 'Conto')}</div>
+        <div class="kpi-value" style="color:${coloreSaldo};">${formatEuro(saldo)}</div>
+        <div class="kpi-sub">${_esc(conto.banca || '')}</div>
+      </div>`
+  }).join('')
+}
+
+// Calcola saldo reale: saldo_iniziale + movimenti del conto
+function _calcolaSaldoConto(conto, movimenti) {
+  const base = Number(conto.saldo_iniziale) || 0
+
+  const delta = movimenti
+    .filter(m => m.conto === conto.id || m.conto === conto.nome)
+    .reduce((acc, m) => {
+      const imp = Number(m.importo) || 0
+      return acc + (m.tipo === 'incasso' ? imp : -imp)
+    }, 0)
+
+  return base + delta
 }
 
 
 // ============================================================
 // SEZIONE 2 — Grafico andamento mensile (Chart.js)
 // ============================================================
-function _popolaGrafico (movimenti) {
+function _popolaGrafico(movimenti) {
 
   const elLoading = document.getElementById('chart-loading')
   const elWrap    = document.getElementById('chart-wrap')
   const elEmpty   = document.getElementById('chart-empty')
 
-  // Costruisce le etichette e i dati per gli ultimi 6 mesi
   const oggi    = new Date()
   const labels  = []
   const incassi = []
   const uscite  = []
 
   for (let i = 5; i >= 0; i--) {
-    // Data del primo giorno del mese di riferimento
     const ref  = new Date(oggi.getFullYear(), oggi.getMonth() - i, 1)
     const anno = ref.getFullYear()
     const mese = ref.getMonth()
@@ -147,30 +190,21 @@ function _popolaGrafico (movimenti) {
     )
   }
 
-  // Nasconde il loading
   if (elLoading) elLoading.style.display = 'none'
 
-  // Se non ci sono dati mostra lo stato vuoto
   const hasDati = incassi.some(v => v > 0) || uscite.some(v => v > 0)
   if (!hasDati) {
     if (elEmpty) elEmpty.style.display = 'flex'
     return
   }
 
-  // Mostra il canvas
   if (elWrap) elWrap.style.display = 'block'
 
-  // Aspetta che Chart.js sia disponibile (CDN asincrono)
   _attendiChart(3000).then(() => {
-
     const canvas = document.getElementById('chart-mensile')
     if (!canvas) return
 
-    // Distrugge il grafico precedente se esiste
-    if (graficoMensile) {
-      graficoMensile.destroy()
-      graficoMensile = null
-    }
+    if (graficoMensile) { graficoMensile.destroy(); graficoMensile = null }
 
     graficoMensile = new window.Chart(canvas, {
       type: 'bar',
@@ -219,22 +253,15 @@ function _popolaGrafico (movimenti) {
             grid: { color: '#edf1f7' },
             ticks: {
               font: { family: 'Montserrat', size: 11 },
-              callback: v => v >= 1000 ? `€${(v / 1000).toFixed(0)}k` : `€${v}`
+              callback: v => v >= 1000 ? `€${(v/1000).toFixed(0)}k` : `€${v}`
             }
           }
         }
       }
     })
-
   }).catch(() => {
-    // Chart.js non si è caricato entro il timeout
-    console.warn('Dashboard: Chart.js non disponibile')
     if (elWrap)  elWrap.style.display  = 'none'
-    if (elEmpty) {
-      elEmpty.style.display = 'flex'
-      elEmpty.querySelector('p').textContent =
-        'Grafico non disponibile. Controlla la connessione internet.'
-    }
+    if (elEmpty) elEmpty.style.display = 'flex'
   })
 }
 
@@ -242,8 +269,7 @@ function _popolaGrafico (movimenti) {
 // ============================================================
 // SEZIONE 3 — Tabella ultimi 10 movimenti
 // ============================================================
-function _popolaMovimenti (movimenti) {
-
+function _popolaMovimenti(movimenti) {
   const elLoading = document.getElementById('mov-loading')
   const elWrap    = document.getElementById('mov-wrap')
   const elEmpty   = document.getElementById('mov-empty')
@@ -256,7 +282,6 @@ function _popolaMovimenti (movimenti) {
     return
   }
 
-  // Prende i primi 10 (già ordinati per data desc da Firestore)
   const righe = movimenti.slice(0, 10).map(m => {
     const data  = _toDate(m.data)
     const badge = m.tipo === 'incasso'
@@ -279,61 +304,55 @@ function _popolaMovimenti (movimenti) {
 
 
 // ============================================================
-// SEZIONE 4 — Tabella contratti in scadenza (60 giorni)
+// SEZIONE 4 — Rate in scadenza (prossimi 60 giorni)
 // ============================================================
-function _popolaScadenze (contratti) {
-
+function _popolaRateScadenza(rate, contratti) {
   const elLoading = document.getElementById('sca-loading')
   const elWrap    = document.getElementById('sca-wrap')
   const elEmpty   = document.getElementById('sca-empty')
-  const tbody     = document.getElementById('tb-contratti')
+  const tbody     = document.getElementById('tb-rate-scadenza')
 
   if (elLoading) elLoading.style.display = 'none'
 
-  const oggi       = new Date(); oggi.setHours(0,0,0,0)
-  const tra60      = new Date(oggi); tra60.setDate(tra60.getDate() + 60)
+  const oggi  = new Date(); oggi.setHours(0, 0, 0, 0)
+  const tra60 = new Date(oggi); tra60.setDate(tra60.getDate() + 60)
 
-  // Filtra e ordina per data_fine crescente (scadono prima → appaiono prima)
-  const inScadenza = contratti
-    .filter(c => {
-      const df = _toDate(c.data_fine)
-      return df && df >= oggi && df <= tra60 && c.stato !== 'concluso'
+  // Filtra rate in attesa entro 60 giorni (incluse quelle già scadute)
+  const rateInScadenza = rate
+    .filter(r => {
+      const dp = _toDate(r.data_prevista)
+      return r.stato === 'attesa' && dp && dp <= tra60
     })
-    .sort((a, b) => _toDate(a.data_fine) - _toDate(b.data_fine))
+    .sort((a, b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))
 
-  if (!inScadenza.length) {
+  if (!rateInScadenza.length) {
     if (elEmpty) elEmpty.style.display = 'flex'
     return
   }
 
-  const righe = inScadenza.map(c => {
-    const df      = _toDate(c.data_fine)
-    const giorni  = df ? Math.ceil((df - oggi) / 86400000) : null
-    const gLabel  = giorni === 0 ? 'oggi!'
-                  : giorni === 1 ? 'domani!'
-                  : giorni != null ? `tra ${giorni} gg`
-                  : ''
+  const righe = rateInScadenza.map(r => {
+    const dp     = _toDate(r.data_prevista)
+    const giorni = dp ? Math.ceil((dp - oggi) / 86400000) : null
 
-    // Badge stato
-    const stati = {
-      attivo:   'badge-green',
-      scaduto:  'badge-red',
-      sospeso:  'badge-amber',
-      concluso: 'badge-gray',
+    let giorniHtml = ''
+    if (giorni !== null) {
+      if (giorni < 0) {
+        giorniHtml = `<span class="giorni-badge rosso">${Math.abs(giorni)}gg fa</span>`
+      } else if (giorni === 0) {
+        giorniHtml = `<span class="giorni-badge rosso">oggi!</span>`
+      } else {
+        giorniHtml = `<span class="giorni-badge">tra ${giorni}gg</span>`
+      }
     }
-    const badgeClass = stati[c.stato] || 'badge-gray'
-    const badgeLabel = c.stato
-      ? c.stato.charAt(0).toUpperCase() + c.stato.slice(1)
-      : '—'
 
     return `<tr>
-      <td>${_esc(c.cliente || '—')}</td>
+      <td style="font-weight:600;">${_esc(r.cliente || '—')}</td>
+      <td style="font-size:11px;color:var(--text2);">${_esc(r.descrizione || 'Rata')}</td>
       <td>
-        ${df ? formatDate(df) : '—'}
-        ${gLabel ? `<span class="giorni-badge">${gLabel}</span>` : ''}
+        ${dp ? formatDate(dp) : '—'}
+        ${giorniHtml}
       </td>
-      <td class="text-right">${formatEuro(c.valore || 0)}</td>
-      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+      <td class="text-right" style="font-weight:700;color:var(--text0);">${formatEuro(r.importo_totale || 0)}</td>
     </tr>`
   }).join('')
 
@@ -343,53 +362,43 @@ function _popolaScadenze (contratti) {
 
 
 // ============================================================
-// UTILITY PRIVATE
+// UTILITY
 // ============================================================
 
-/** Converte un valore data Firestore (Timestamp | Date | string) in Date JS */
-function _toDate (val) {
+function _toDate(val) {
   if (!val) return null
-  if (typeof val.toDate === 'function') return val.toDate()  // Firestore Timestamp
+  if (typeof val.toDate === 'function') return val.toDate()
   const d = new Date(val)
   return isNaN(d) ? null : d
 }
 
-/** Anno di una data Firestore */
-function _annoOf (val) {
+function _annoOf(val) {
   const d = _toDate(val)
   return d ? d.getFullYear() : -1
 }
 
-/** Mese (0-11) di una data Firestore */
-function _meseOf (val) {
+function _meseOf(val) {
   const d = _toDate(val)
   return d ? d.getMonth() : -1
 }
 
-/** Imposta il testo di un elemento KPI */
-function _setKpi (id, valore) {
+function _setKpi(id, valore) {
   const el = document.getElementById(id)
   if (el) el.textContent = valore
 }
 
-/** Nome del mese corrente in italiano (es. "Aprile 2025") */
-function _nomeMeseCorrente () {
+function _nomeMeseCorrente() {
   return new Date().toLocaleString('it-IT', { month: 'long', year: 'numeric' })
 }
 
-/** Escape HTML per prevenire XSS */
-function _esc (str) {
+function _esc(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 }
 
-/**
- * Aspetta che window.Chart sia disponibile (CDN asincrono).
- * Controlla ogni 100ms fino a timeoutMs.
- */
-function _attendiChart (timeoutMs) {
+function _attendiChart(timeoutMs) {
   return new Promise((resolve, reject) => {
     if (window.Chart) { resolve(); return }
     const start = Date.now()
