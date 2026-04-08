@@ -757,10 +757,21 @@ function _apriDettaglioRate(contrattoId) {
         ? '<span class="badge badge-red">Scaduta</span>'
         : '<span class="badge badge-amber">In attesa</span>'
 
+      // Pulsante "Registra incasso" solo per rate in attesa
+      const btnIncasso = r.stato === 'attesa' ? `
+        <button
+          onclick="window.__contrattiRegistraIncasso('${r.id}', '${_esc(contrattoId)}')"
+          style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid rgba(16,185,129,0.4);
+                 background:rgba(16,185,129,0.08);color:var(--green);font-size:11px;font-weight:700;
+                 cursor:pointer;font-family:Montserrat,sans-serif;">
+          + Registra incasso
+        </button>` : ''
+
       return `<div class="rate-dettaglio-row ${statoClass}">
         <div>
           <div style="font-weight:600;color:var(--text0);">${_esc(r.descrizione || 'Rata')}</div>
           <div style="font-size:10px;color:var(--text2);">Imponibile: ${formatEuro(r.importo_imponibile)} + IVA ${r.iva_rate}%</div>
+          ${btnIncasso}
         </div>
         <div style="font-size:12px;">${r.data_prevista ? formatDate(_toDate(r.data_prevista)) : '—'}</div>
         <div style="font-weight:700;color:var(--text0);">${formatEuro(r.importo_totale)}</div>
@@ -792,6 +803,42 @@ function _apriDettaglioRate(contrattoId) {
 function _chiudiModalRate() {
   document.getElementById('modal-rate-dettaglio')?.classList.remove('open')
 }
+
+
+// ============================================================
+// REGISTRA INCASSO DA CONTRATTO
+// Apre il modulo Incassi pre-compilato con i dati della rata
+// ============================================================
+function _registraIncasso(rataId, contrattoId) {
+  // Chiudi il modal rate
+  _chiudiModalRate()
+
+  const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
+  const c = _contratti.find(x => x.id === contrattoId)
+  if (!r || !c) return
+
+  // Naviga a Incassi con i parametri pre-compilati nel sessionStorage
+  const precompila = {
+    tipo:          'incasso',
+    contratto_ref: contrattoId,
+    rata_ref:      rataId,
+    importo:       r.importo_totale,
+    iva_rate:      r.iva_rate,
+    descrizione:   `${r.descrizione || 'Rata'} — ${c.cliente}`,
+    categoria:     'Contratto',
+    conto:         c.conto_accredito || '',
+    data:          new Date().toISOString().split('T')[0],
+  }
+
+  // Salva i dati in sessionStorage per incassi.js
+  sessionStorage.setItem('incassi_precompila', JSON.stringify(precompila))
+
+  // Naviga al modulo incassi
+  window.location.hash = 'incassi'
+}
+
+// Espone la funzione al DOM (usata dal bottone inline nelle rate)
+window.__contrattiRegistraIncasso = _registraIncasso
 
 
 // ============================================================
