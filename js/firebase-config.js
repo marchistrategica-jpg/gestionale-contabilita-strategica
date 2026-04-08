@@ -23,6 +23,7 @@ export const db = firebase.firestore()
 // Shortcut collezioni
 export const collections = {
   contratti:   () => db.collection('contratti'),
+  rate:        () => db.collection('rate'),        // Piano pagamenti contratti
   movimenti:   () => db.collection('movimenti'),
   conti:       () => db.collection('conti'),
   costi:       () => db.collection('costi'),
