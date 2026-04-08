@@ -281,20 +281,22 @@ async function _aggiornaKPI() {
   })
 
   // KPI 4 — incassi dell'anno corrente (YTD = Year To Date)
-  // Questa query va su tutto l'anno, quindi la facciamo a parte
+  // NOTA: NON usiamo .where('tipo') + .where('data') insieme perché Firestore
+  // richiederebbe un indice composto. Carichiamo per sola data e filtriamo in JS.
   let incassiYTD = 0
   try {
     const inizioAnno = new Date(annoAttivo, 0, 1)
     const fineAnno   = new Date(annoAttivo, 11, 31, 23, 59, 59)
 
     const snapYTD = await collections.movimenti()
-      .where('tipo', '==', 'incasso')
       .where('data', '>=', toTimestamp(inizioAnno.toISOString()))
       .where('data', '<=', toTimestamp(fineAnno.toISOString()))
       .get()
 
+    // Filtriamo lato client: contiamo solo gli incassi
     snapYTD.docs.forEach(doc => {
-      incassiYTD += (doc.data().importo || 0)
+      const d = doc.data()
+      if (d.tipo === 'incasso') incassiYTD += (d.importo || 0)
     })
   } catch (e) {
     console.warn('Impossibile calcolare YTD:', e)
