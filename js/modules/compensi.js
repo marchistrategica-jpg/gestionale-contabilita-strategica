@@ -23,6 +23,7 @@ import { ICONS } from '../../css/icons.js'
 // ── Stato locale ─────────────────────────────────────────────
 let soci      = []   // documenti Firestore collezione soci
 let compensi  = []   // documenti Firestore collezione compensi
+let contiList = []   // conti correnti
 let filtroSocio = '' // '' = tutti
 let filtroAnno  = String(new Date().getFullYear())
 
@@ -54,13 +55,33 @@ export async function init() {
 
 async function caricaDati() {
   // Carica soci e compensi in parallelo
-  const [snapSoci, snapCompensi] = await Promise.all([
+  const [snapSoci, snapCompensi, snapConti] = await Promise.all([
     collections.soci().orderBy('nome').get(),
-    collections.compensi().orderBy('createdAt', 'desc').get()
+    collections.compensi().get(),
+    collections.conti().get()
   ])
 
-  soci     = snapSoci.docs.map(d => ({ id: d.id, ...d.data() }))
-  compensi = snapCompensi.docs.map(d => ({ id: d.id, ...d.data() }))
+  soci      = snapSoci.docs.map(d => ({ id: d.id, ...d.data() }))
+  compensi  = snapCompensi.docs.map(d => ({ id: d.id, ...d.data() }))
+  compensi.sort((a, b) => {
+    const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0)
+    const db = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0)
+    return db - da
+  })
+  contiList = snapConti.docs.map(d => ({ id: d.id, ...d.data() }))
+  contiList.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
+
+  // Popola select conto nel form
+  const selConto = document.getElementById('compenso-conto')
+  if (selConto) {
+    selConto.innerHTML = '<option value="">— Seleziona conto —</option>'
+    contiList.forEach(ct => {
+      const opt = document.createElement('option')
+      opt.value = ct.id
+      opt.textContent = `${ct.nome}${ct.banca ? ' — ' + ct.banca : ''}`
+      selConto.appendChild(opt)
+    })
+  }
 }
 
 
@@ -334,6 +355,7 @@ function apriModalNuovo() {
   document.getElementById('compenso-periodo').value = ''
   document.getElementById('compenso-data').value    = ''
   document.getElementById('compenso-stato').value   = 'da_pagare'
+  document.getElementById('compenso-conto').value   = ''
   document.getElementById('compenso-note').value    = ''
   document.getElementById('modal-compenso-title').textContent = 'Nuovo compenso'
   openModal('modal-compenso')
@@ -354,6 +376,7 @@ function editCompenso(id) {
   document.getElementById('compenso-periodo').value = c.periodo || ''
   document.getElementById('compenso-data').value    = toInputDate(c.data_pagamento)
   document.getElementById('compenso-stato').value   = c.stato || 'da_pagare'
+  document.getElementById('compenso-conto').value   = c.conto_pagamento || ''
   document.getElementById('compenso-note').value    = c.note || ''
   document.getElementById('modal-compenso-title').textContent = 'Modifica compenso'
   openModal('modal-compenso')
@@ -382,6 +405,9 @@ async function salvaCompenso() {
   const socio = soci.find(s => s.id === socioId)
   if (!socio) return toast('Socio non trovato', 'error')
 
+  const contoId  = document.getElementById('compenso-conto')?.value || null
+  const contoObj = contiList.find(ct => ct.id === contoId)
+
   const dati = {
     socio_ref:      socioId,
     socio_nome:     socio.nome,
@@ -389,7 +415,9 @@ async function salvaCompenso() {
     periodo,
     data_pagamento: data ? toTimestamp(data) : null,
     stato,
-    note
+    note,
+    conto_pagamento:      contoId || null,
+    conto_pagamento_nome: contoObj?.nome || null,
   }
 
   // Feedback sul bottone durante il salvataggio
@@ -422,7 +450,8 @@ async function salvaCompenso() {
         descrizione:  `Compenso socio — ${socio.nome}`,
         categoria:    'Compenso socio',
         note:         periodo ? `Periodo: ${periodo}` : null,
-        conto:        null,
+        conto:        contoId || null,
+        conto_nome:   contoObj?.nome || null,
         iva_rate:     0,
         iva_importo:  0,
         compenso_ref: savedId,
@@ -493,7 +522,8 @@ async function pagaCompenso(id) {
       descrizione:  `Compenso socio — ${c.socio_nome || ''}`,
       categoria:    'Compenso socio',
       note:         c.periodo ? `Periodo: ${c.periodo}` : null,
-      conto:        null,
+      conto:        c.conto_pagamento || null,
+      conto_nome:   c.conto_pagamento_nome || null,
       iva_rate:     0,
       iva_importo:  0,
       compenso_ref: id,
