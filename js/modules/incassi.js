@@ -422,6 +422,27 @@ function _onRataSelezionata(rataId) {
   document.getElementById('mov-descrizione').value = `${r.descrizione || 'Rata'} — ${r.cliente || ''}`
   document.getElementById('mov-categoria').value   = 'Contratto'
 
+  // Auto-compila il conto dal contratto collegato alla rata
+  const contratto = tuttiContratti.find(ct => ct.id === r.contratto_ref)
+  if (contratto?.conto_accredito) {
+    const selConto = document.getElementById('mov-conto')
+    if (selConto) {
+      selConto.value = contratto.conto_accredito
+      // Mostra feedback visivo del conto selezionato
+      const nomeContoObj = tuttiConti.find(cn => cn.id === contratto.conto_accredito)
+      if (nomeContoObj) {
+        let badge = document.getElementById('conto-auto-badge')
+        if (!badge) {
+          badge = document.createElement('div')
+          badge.id = 'conto-auto-badge'
+          badge.style.cssText = 'margin-top:4px;font-size:11px;font-weight:700;color:var(--green);'
+          selConto.parentNode.appendChild(badge)
+        }
+        badge.textContent = `✓ Conto pre-selezionato: ${nomeContoObj.nome}`
+      }
+    }
+  }
+
   // Aggiorna display IVA
   const iva = (r.importo_totale || 0) * (r.iva_rate || 0) / 100
   document.getElementById('mov-iva-display').textContent = formatEuro(iva)
@@ -561,6 +582,8 @@ function _apriModalNuovo() {
   if (info) info.style.display = 'none'
   const section = document.getElementById('mov-rata-section')
   if (section) section.style.display = 'none'
+  // Rimuovi badge conto
+  document.getElementById('conto-auto-badge')?.remove()
 
   _impostaTipoModal('incasso')
   openModal('modal-movimento')
@@ -638,9 +661,30 @@ async function _apriModalPrecompilato(dati) {
     _caricaRateContratto(dati.contratto_ref)
   }
 
-  // Seleziona conto
+  // Seleziona conto (con retry per assicurarsi che le opzioni siano caricate)
   const selConto = document.getElementById('mov-conto')
-  if (selConto && dati.conto) selConto.value = dati.conto
+  if (selConto && dati.conto) {
+    selConto.value = dati.conto
+    // Verifica che il valore sia stato impostato correttamente
+    if (selConto.value !== dati.conto) {
+      // Retry dopo un tick
+      setTimeout(() => {
+        selConto.value = dati.conto
+      }, 50)
+    }
+    // Mostra badge conto selezionato
+    const nomeContoObj = tuttiConti.find(cn => cn.id === dati.conto)
+    if (nomeContoObj) {
+      let badge = document.getElementById('conto-auto-badge')
+      if (!badge) {
+        badge = document.createElement('div')
+        badge.id = 'conto-auto-badge'
+        badge.style.cssText = 'margin-top:4px;font-size:11px;font-weight:700;color:var(--green);'
+        selConto.parentNode.appendChild(badge)
+      }
+      badge.textContent = `✓ Conto pre-selezionato: ${nomeContoObj.nome}`
+    }
+  }
 
   _impostaTipoModal('incasso')
 
