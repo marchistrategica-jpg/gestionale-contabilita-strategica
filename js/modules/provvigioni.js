@@ -471,31 +471,20 @@ async function segnaComePageta(id) {
     })
 
     // 2. Crea movimento automatico in /movimenti (pagamento in uscita)
-    //    Solo se non esiste già un movimento collegato a questa provvigione
-    const movimentoDati = {
-      tipo:          'pagamento',
-      importo:       p.importo || 0,
-      data:          oggiTs,
-      descrizione:   `Provvigione ${p.agente || ''}`,
-      categoria:     'Provvigione',
-      note:          p.cliente ? `Cliente: ${p.cliente}` : null,
-      conto:         null,
-      iva_rate:      0,
-      iva_importo:   0,
-      contratto_ref: p.contratto_ref || null,
-      provvigione_ref: id,   // collegamento per evitare duplicati
-      createdAt:     FieldValue.serverTimestamp()
-    }
-
-    // Controlla se esiste già un movimento per questa provvigione
-    const esistente = await collections.movimenti()
-      .where('provvigione_ref', '==', id)
-      .limit(1)
-      .get()
-
-    if (esistente.empty) {
-      await collections.movimenti().add(movimentoDati)
-    }
+    await collections.movimenti().add({
+      tipo:            'pagamento',
+      importo:         p.importo || 0,
+      data:            oggiTs,
+      descrizione:     `Provvigione — ${p.agente || ''}`,
+      categoria:       'Provvigione',
+      note:            p.cliente ? `Cliente: ${p.cliente}` : null,
+      conto:           null,
+      iva_rate:        0,
+      iva_importo:     0,
+      contratto_ref:   p.contratto_ref || null,
+      provvigione_ref: id,
+      createdAt:       FieldValue.serverTimestamp()
+    })
 
     // 3. Aggiorna stato locale
     p.stato          = 'pagata'
