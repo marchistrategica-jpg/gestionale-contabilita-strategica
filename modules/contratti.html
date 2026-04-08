@@ -50,6 +50,7 @@
           <th class="text-right">Imponibile</th>
           <th class="text-right">Totale (IVA incl.)</th>
           <th class="text-center">Rate</th>
+          <th>Conto</th>
           <th>Prossima rata</th>
           <th>Stato</th>
           <th class="text-right">Azioni</th>
@@ -101,6 +102,15 @@
               <option value="corrente">Corrente</option>
               <option value="sospeso">Sospeso</option>
               <option value="concluso">Concluso</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label" for="f-conto-accredito">Conto di accredito pagamenti</label>
+            <select class="form-control" id="f-conto-accredito">
+              <option value="">— Seleziona il conto —</option>
             </select>
           </div>
         </div>
