@@ -9,7 +9,7 @@
 //                             initModalClose, confirmDelete, stateBadge
 // ============================================================
 
-import { collections, toTimestamp } from '../firebase-config.js'
+import { collections, toTimestamp, FieldValue } from '../firebase-config.js'
 import {
   formatEuro, formatDate, toInputDate,
   toast, openModal, closeModal, initModalClose,
@@ -457,20 +457,51 @@ async function eliminaProvvigione(id) {
 
 async function segnaComePageta(id) {
   try {
-    const oggi = new Date()
+    const p    = tutteProvvigioni.find(x => x.id === id)
+    if (!p) return
+
+    const oggi      = new Date()
+    const oggiTs    = firebase.firestore.Timestamp.fromDate(oggi)
+    const oggiStr   = oggi.toISOString().split('T')[0]
+
+    // 1. Aggiorna provvigione
     await collections.provvigioni().doc(id).update({
       stato:          'pagata',
-      data_pagamento: firebase.firestore.Timestamp.fromDate(oggi)
+      data_pagamento: oggiTs
     })
 
-    // Aggiorna in locale
-    const p = tutteProvvigioni.find(x => x.id === id)
-    if (p) {
-      p.stato          = 'pagata'
-      p.data_pagamento = firebase.firestore.Timestamp.fromDate(oggi)
+    // 2. Crea movimento automatico in /movimenti (pagamento in uscita)
+    //    Solo se non esiste già un movimento collegato a questa provvigione
+    const movimentoDati = {
+      tipo:          'pagamento',
+      importo:       p.importo || 0,
+      data:          oggiTs,
+      descrizione:   `Provvigione ${p.agente || ''}`,
+      categoria:     'Provvigione',
+      note:          p.cliente ? `Cliente: ${p.cliente}` : null,
+      conto:         null,
+      iva_rate:      0,
+      iva_importo:   0,
+      contratto_ref: p.contratto_ref || null,
+      provvigione_ref: id,   // collegamento per evitare duplicati
+      createdAt:     FieldValue.serverTimestamp()
     }
 
-    toast('Provvigione segnata come pagata ✓')
+    // Controlla se esiste già un movimento per questa provvigione
+    const esistente = await collections.movimenti()
+      .where('provvigione_ref', '==', id)
+      .limit(1)
+      .get()
+
+    if (esistente.empty) {
+      await collections.movimenti().add(movimentoDati)
+    }
+
+    // 3. Aggiorna stato locale
+    p.stato          = 'pagata'
+    p.data_pagamento = oggiTs
+
+    toast('Provvigione pagata ✓ — movimento registrato in Incassi', 'success')
     aggiornaVista()
 
   } catch (err) {
