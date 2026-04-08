@@ -397,20 +397,41 @@ async function salvaCompenso() {
   if (btn) { btn.disabled = true; btn.textContent = 'Salvataggio...' }
 
   try {
+    // Stato precedente (per capire se è cambiato a 'pagata')
+    const vecchio = id ? compensi.find(x => x.id === id) : null
+    const eraGiaPagata = vecchio?.stato === 'pagata'
+
+    let savedId = id
     if (id) {
-      // Aggiorna documento esistente
       await collections.compensi().doc(id).update(dati)
       toast('Compenso aggiornato', 'success')
     } else {
-      // Crea nuovo documento
       dati.createdAt = FieldValue.serverTimestamp()
-      await collections.compensi().add(dati)
+      const ref = await collections.compensi().add(dati)
+      savedId = ref.id
       toast('Compenso aggiunto', 'success')
     }
 
-    closeModal('modal-compenso')
+    // Crea movimento automatico se stato='pagata' e non era già pagata
+    if (stato === 'pagata' && !eraGiaPagata && savedId) {
+      const ts = data ? toTimestamp(data) : FieldValue.serverTimestamp()
+      await collections.movimenti().add({
+        tipo:         'pagamento',
+        importo:      importo || 0,
+        data:         data ? toTimestamp(data) : toTimestamp(new Date().toISOString().split('T')[0]),
+        descrizione:  `Compenso socio — ${socio.nome}`,
+        categoria:    'Compenso socio',
+        note:         periodo ? `Periodo: ${periodo}` : null,
+        conto:        null,
+        iva_rate:     0,
+        iva_importo:  0,
+        compenso_ref: savedId,
+        createdAt:    FieldValue.serverTimestamp()
+      })
+      toast(`✓ Compenso registrato in Incassi & Pagamenti automaticamente`, 'success', 5000)
+    }
 
-    // Ricarica tutto e aggiorna la UI
+    closeModal('modal-compenso')
     await caricaDati()
     renderSociCards()
     renderKPI()
