@@ -1,264 +1,241 @@
 /**
  * ============================================================
- * MODULO: Contratti — Logica JS
+ * MODULO: Contratti — Logica JS (v2)
  * File:   js/modules/contratti.js
  *
- * Esportato: export async function init()
- * Chiamato da router.js ogni volta che si naviga su #contratti
+ * NOVITÀ rispetto alla v1:
+ *   - Rimosso campo "numero contratto"
+ *   - Rimosso campo "data fine"
+ *   - Aggiunto: imponibile + IVA (aliquota selezionabile) + totale auto
+ *   - Aggiunto: modalità di pagamento (note)
+ *   - Aggiunto: piano rate (collezione /rate in Firestore)
+ *   - Filtri: Tutti / In scadenza / Scaduti / Sospesi / Conclusi
+ *             "In scadenza" e "Scaduti" calcolati dalle rate
  *
- * DIPENDENZE:
- *   js/firebase-config.js → db, collections, toTimestamp
- *   js/utils.js           → formatEuro, formatDate, toInputDate,
- *                           toast, openModal, closeModal,
- *                           initModalClose, confirmDelete
- *   css/icons.js          → ICONS (SVG inline)
+ * Struttura Firestore:
+ *   /contratti/{id}
+ *     cliente, data_inizio, stato (corrente|sospeso|concluso)
+ *     importo_imponibile, iva_rate, importo_iva, importo_totale
+ *     modalita_pagamento, note, createdAt
+ *
+ *   /rate/{id}
+ *     contratto_ref, cliente (denorm.)
+ *     descrizione, importo_imponibile, iva_rate, importo_iva, importo_totale
+ *     data_prevista, data_pagamento, stato (attesa|pagata|scaduta)
+ *     createdAt
  * ============================================================
  */
 
-import { collections, toTimestamp }                  from '../../js/firebase-config.js'
-import { formatEuro, formatDate, toInputDate,
-         toast, openModal, closeModal,
-         initModalClose, confirmDelete }              from '../../js/utils.js'
-import { ICONS }                                     from '../../css/icons.js'
+import { collections, toTimestamp, FieldValue } from '../../js/firebase-config.js'
+import { formatEuro, formatDate, toInputDate, toast, confirmDelete } from '../../js/utils.js'
 
 
-// ============================================================
-// STATO LOCALE DEL MODULO
-// Teniamo tutto qui dentro — si azzera ad ogni navigazione
-// ============================================================
-
-/** Array di tutti i contratti caricati da Firestore */
-let _tuttiContratti = []
-
-/** Filtro stato attivo (stringa: 'tutti' | 'attivo' | 'in_scadenza' | ...) */
-let _filtroStato = 'tutti'
-
-/** Testo di ricerca corrente */
+// ── Stato locale ──────────────────────────────────────────────
+let _contratti    = []   // tutti i contratti Firestore
+let _rateMap      = {}   // { contratto_id: [rate...] }
+let _filtroStato  = 'tutti'
 let _testoRicerca = ''
 
+// Rate temporanee nel form (prima del salvataggio)
+let _rateForm       = []   // array di oggetti { tempId, id?, descrizione, imponibile, iva_rate, data_prevista }
+let _rateEliminate  = []   // id di rate esistenti da cancellare al salvataggio
+let _contrattoInEdit = null // id contratto in modifica (null = nuovo)
+
+
+// ── ALIQUOTE IVA ITALIA ───────────────────────────────────────
+const ALIQUOTE_IVA = [
+  { v: 0,  l: '0% – Esente' },
+  { v: 4,  l: '4%' },
+  { v: 5,  l: '5%' },
+  { v: 10, l: '10%' },
+  { v: 22, l: '22% – Ordinaria' },
+]
+
 
 // ============================================================
-// INIT — punto di ingresso chiamato dal router
+// INIT
 // ============================================================
-export async function init () {
-
-  // 1. Inietta le icone SVG negli slot HTML
-  _iniettaIcone()
-
-  // 2. Collega i listener UI (bottoni, ricerca, chip, modal)
+export async function init() {
+  await _caricaDati()
   _collegaEventi()
-
-  // 3. Carica i contratti da Firestore
-  await _caricaContratti()
+  _renderTabella()
 }
 
 
 // ============================================================
-// ICONE — inietta i simboli SVG negli span placeholder
+// CARICAMENTO DATI
 // ============================================================
-function _iniettaIcone () {
-  // Usa la funzione di utility per non duplicare codice
-  const set = (id, icona) => {
-    const el = document.getElementById(id)
-    if (el) el.innerHTML = icona
-  }
-  set('ico-plus',          ICONS.plus)
-  set('ico-download',      ICONS.download)
-  set('ico-search',        ICONS.search)
-  set('ico-close-modal',   ICONS.close)
-  set('ico-check-modal',   ICONS.check)
-  set('ico-contract-empty',ICONS.contract)
-}
+async function _caricaDati() {
+  const elLoad  = document.getElementById('contratti-loading')
+  const elTable = document.getElementById('contratti-table-wrap')
+  const elEmpty = document.getElementById('contratti-empty')
 
-
-// ============================================================
-// EVENTI — collega tutti i listener UI
-// ============================================================
-function _collegaEventi () {
-
-  // ── Bottone "Nuovo contratto" ────────────────────────────
-  document.getElementById('btn-nuovo')
-    ?.addEventListener('click', () => _apriModalNuovo())
-
-  // ── Bottone "Annulla" nel modal ──────────────────────────
-  document.getElementById('btn-annulla')
-    ?.addEventListener('click', () => _chiudiModal())
-
-  // ── X in alto a destra nel modal ────────────────────────
-  document.getElementById('modal-contratto-close')
-    ?.addEventListener('click', () => _chiudiModal())
-
-  // ── Click fuori dal modal → chiude ──────────────────────
-  document.getElementById('modal-contratto')
-    ?.addEventListener('click', e => {
-      if (e.target.id === 'modal-contratto') _chiudiModal()
-    })
-
-  // ── Bottone "Salva" nel modal ────────────────────────────
-  document.getElementById('btn-salva')
-    ?.addEventListener('click', () => _salvaContratto())
-
-  // ── Ricerca real-time (si aggiorna ad ogni carattere) ────
-  document.getElementById('input-ricerca')
-    ?.addEventListener('input', e => {
-      _testoRicerca = e.target.value.toLowerCase().trim()
-      _renderTabella()
-    })
-
-  // ── Chip filtro stato ────────────────────────────────────
-  document.getElementById('filtri-stato')
-    ?.querySelectorAll('.chip-stato')
-    .forEach(chip => {
-      chip.addEventListener('click', () => {
-        // Rimuovi .active da tutti, aggiungilo solo al cliccato
-        document.querySelectorAll('.chip-stato')
-          .forEach(c => c.classList.remove('active'))
-        chip.classList.add('active')
-        _filtroStato = chip.dataset.stato
-        _renderTabella()
-      })
-    })
-}
-
-
-// ============================================================
-// FIRESTORE — carica lista contratti
-// ============================================================
-async function _caricaContratti () {
-
-  const elLoading   = document.getElementById('contratti-loading')
-  const elTableWrap = document.getElementById('contratti-table-wrap')
-  const elEmpty     = document.getElementById('contratti-empty')
-
-  // Mostra spinner, nasconde il resto
-  if (elLoading)   elLoading.style.display   = 'flex'
-  if (elTableWrap) elTableWrap.style.display = 'none'
-  if (elEmpty)     elEmpty.style.display     = 'none'
+  if (elLoad)  elLoad.style.display  = 'flex'
+  if (elTable) elTable.style.display = 'none'
+  if (elEmpty) elEmpty.style.display = 'none'
 
   try {
-    // Ordina per data_fine crescente: i contratti più vicini
-    // alla scadenza appaiono in cima alla tabella
-    const snap = await collections.contratti()
-      .orderBy('data_fine', 'asc')
-      .get()
+    // Carica contratti e rate in parallelo
+    const [snapC, snapR] = await Promise.all([
+      collections.contratti().orderBy('data_inizio', 'desc').get(),
+      collections.rate().orderBy('data_prevista', 'asc').get()
+    ])
 
-    _tuttiContratti = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    _contratti = snapC.docs.map(d => ({ id: d.id, ...d.data() }))
 
-    // Nasconde il loading e renderizza
-    if (elLoading) elLoading.style.display = 'none'
-    _renderTabella()
+    // Raggruppa rate per contratto
+    _rateMap = {}
+    snapR.docs.forEach(d => {
+      const r = { id: d.id, ...d.data() }
+      if (!_rateMap[r.contratto_ref]) _rateMap[r.contratto_ref] = []
+      _rateMap[r.contratto_ref].push(r)
+    })
 
   } catch (err) {
-    console.error('Contratti: errore Firebase →', err)
-    if (elLoading) elLoading.style.display = 'none'
-    toast('Errore nel caricamento dei contratti. Controlla Firebase.', 'error')
-
-    // Mostra stato vuoto con messaggio d'errore
-    if (elEmpty) {
-      elEmpty.style.display = 'flex'
-      const p = elEmpty.querySelector('p')
-      if (p) p.textContent = 'Errore nel caricamento. Riprova.'
-    }
+    console.error('Contratti: errore caricamento →', err)
+    toast('Errore nel caricamento dei contratti', 'error')
+  } finally {
+    if (elLoad) elLoad.style.display = 'none'
   }
 }
 
 
 // ============================================================
-// RENDER — filtra e disegna la tabella
+// STATO COMPUTATO — dipende dalle rate del contratto
 // ============================================================
-function _renderTabella () {
+function _computaStato(contratto) {
+  // Se manualmente sospeso o concluso, ha la precedenza
+  if (contratto.stato === 'sospeso')  return 'sospeso'
+  if (contratto.stato === 'concluso') return 'concluso'
 
-  const elTableWrap = document.getElementById('contratti-table-wrap')
-  const elEmpty     = document.getElementById('contratti-empty')
-  const tbody       = document.getElementById('tb-contratti')
-  const elCount     = document.getElementById('contratti-count')
-
-  // Aggiorna il contatore totale (sempre il numero reale, non filtrato)
-  if (elCount) elCount.textContent = _tuttiContratti.length
-
-  // ── Applica filtri ───────────────────────────────────────
-  const oggi = new Date(); oggi.setHours(0,0,0,0)
+  const rate = _rateMap[contratto.id] || []
+  const oggi  = new Date(); oggi.setHours(0,0,0,0)
   const tra30 = new Date(oggi); tra30.setDate(tra30.getDate() + 30)
 
-  const filtrati = _tuttiContratti.filter(c => {
+  const rateAttesa = rate.filter(r => r.stato === 'attesa')
 
-    // Filtro per testo di ricerca (cliente o numero)
+  // Ha rate scadute (data prevista nel passato)
+  const haScadute = rateAttesa.some(r => {
+    const d = _toDate(r.data_prevista)
+    return d && d < oggi
+  })
+  if (haScadute) return 'scaduto'
+
+  // Ha rate in scadenza entro 30 giorni
+  const haInScadenza = rateAttesa.some(r => {
+    const d = _toDate(r.data_prevista)
+    return d && d >= oggi && d <= tra30
+  })
+  if (haInScadenza) return 'in_scadenza'
+
+  return 'corrente'
+}
+
+
+// ============================================================
+// RENDER TABELLA
+// ============================================================
+function _renderTabella() {
+  const elTable = document.getElementById('contratti-table-wrap')
+  const elEmpty = document.getElementById('contratti-empty')
+  const tbody   = document.getElementById('tb-contratti')
+  const elCount = document.getElementById('contratti-count')
+
+  if (elCount) elCount.textContent = _contratti.length
+
+  const oggi  = new Date(); oggi.setHours(0,0,0,0)
+  const tra30 = new Date(oggi); tra30.setDate(tra30.getDate() + 30)
+
+  // Applica filtri
+  const filtrati = _contratti.filter(c => {
+    const statoComp = _computaStato(c)
+
+    // Filtro testo
     if (_testoRicerca) {
-      const cliente = (c.cliente || '').toLowerCase()
-      const numero  = (c.numero  || '').toLowerCase()
-      if (!cliente.includes(_testoRicerca) && !numero.includes(_testoRicerca)) {
-        return false
-      }
+      const q = _testoRicerca.toLowerCase()
+      if (!(c.cliente || '').toLowerCase().includes(q)) return false
     }
 
-    // Filtro per stato chip
+    // Filtro stato
     if (_filtroStato === 'tutti') return true
-
-    if (_filtroStato === 'in_scadenza') {
-      // "In scadenza" = data_fine tra oggi e tra 30 giorni, non concluso
-      const df = _toDate(c.data_fine)
-      return df && df >= oggi && df <= tra30 && c.stato !== 'concluso'
-    }
-
-    return c.stato === _filtroStato
+    return statoComp === _filtroStato
   })
 
-  // ── Nessun risultato ────────────────────────────────────
   if (!filtrati.length) {
-    if (elTableWrap) elTableWrap.style.display = 'none'
-    if (elEmpty)     elEmpty.style.display     = 'flex'
-
-    // Messaggio personalizzato in base al filtro attivo
-    const p = elEmpty?.querySelector('p')
-    if (p) {
-      p.textContent = _testoRicerca
-        ? `Nessun contratto trovato per "${_testoRicerca}".`
+    if (elTable) elTable.style.display = 'none'
+    if (elEmpty) {
+      elEmpty.style.display = 'flex'
+      const msg = document.getElementById('contratti-empty-msg')
+      if (msg) msg.textContent = _testoRicerca
+        ? `Nessun contratto trovato per "${_testoRicerca}"`
         : 'Nessun contratto in questa categoria.'
     }
     return
   }
 
-  // ── Costruisce le righe HTML ─────────────────────────────
-  if (elEmpty)     elEmpty.style.display     = 'none'
-  if (elTableWrap) elTableWrap.style.display = 'block'
+  if (elEmpty) elEmpty.style.display = 'none'
+  if (elTable) elTable.style.display = 'block'
 
   const righe = filtrati.map(c => {
+    const statoComp = _computaStato(c)
+    const rate      = _rateMap[c.id] || []
 
-    const df      = _toDate(c.data_fine)
-    const di      = _toDate(c.data_inizio)
+    // Riga CSS class
+    let rowClass = ''
+    if (statoComp === 'scaduto')     rowClass = 'row-scaduto'
+    if (statoComp === 'in_scadenza') rowClass = 'row-in-scadenza'
 
-    // Controlla se in scadenza entro 30 giorni
-    const inScadenza = df && df >= oggi && df <= tra30 && c.stato !== 'concluso'
-    const rowClass   = inScadenza ? 'row-in-scadenza' : ''
+    // Conteggio rate pagate
+    const rateTot    = rate.length
+    const ratePagate = rate.filter(r => r.stato === 'pagata').length
 
-    // Giorni rimasti (solo se in scadenza)
-    let giorniLabel = ''
-    if (inScadenza && df) {
-      const giorni = Math.ceil((df - oggi) / 86400000)
-      giorniLabel = giorni === 0 ? '<span class="giorni-rimasti">⚠ Scade oggi!</span>'
-                  : giorni === 1 ? '<span class="giorni-rimasti">⚠ Scade domani!</span>'
-                  : `<span class="giorni-rimasti">⚠ Tra ${giorni} giorni</span>`
+    // Prossima rata in attesa
+    const prossima = rate
+      .filter(r => r.stato === 'attesa')
+      .sort((a, b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))[0]
+
+    // Etichetta prossima rata
+    let prossimaHtml = '—'
+    if (prossima) {
+      const dp = _toDate(prossima.data_prevista)
+      const giorni = dp ? Math.ceil((dp - oggi) / 86400000) : null
+      let giorniHtml = ''
+      if (giorni !== null) {
+        if (giorni < 0) giorniHtml = `<span class="giorni-scaduto">${Math.abs(giorni)}gg fa</span>`
+        else if (giorni === 0) giorniHtml = `<span class="giorni-scaduto">oggi!</span>`
+        else if (giorni <= 30) giorniHtml = `<span class="giorni-rimasti">tra ${giorni}gg</span>`
+      }
+      prossimaHtml = `
+        <div style="font-size:11px;font-weight:600;color:var(--text0);">${formatEuro(prossima.importo_totale)}</div>
+        <div style="font-size:10px;color:var(--text2);">${dp ? formatDate(dp) : '—'}${giorniHtml}</div>
+      `
     }
 
+    // Badge rate
+    const badgeRate = rateTot > 0
+      ? `<span style="font-size:11px;font-weight:700;color:var(--text1);cursor:pointer;"
+           onclick="window.__contrattiDettaglioRate('${c.id}')"
+           title="Vedi dettaglio rate">
+           ${ratePagate}/${rateTot}
+         </span>`
+      : '<span style="font-size:11px;color:var(--text2);">—</span>'
+
     return `<tr class="${rowClass}" data-id="${c.id}">
-      <td><strong style="color:var(--text0);">${_esc(c.numero || '—')}</strong></td>
-      <td>${_esc(c.cliente || '—')}</td>
-      <td>${di ? formatDate(di) : '—'}</td>
+      <td><strong style="color:var(--text0);">${_esc(c.cliente || '—')}</strong></td>
+      <td style="font-size:12px;">${c.data_inizio ? formatDate(_toDate(c.data_inizio)) : '—'}</td>
+      <td class="text-right" style="font-size:12px;">${formatEuro(c.importo_imponibile)}</td>
+      <td class="text-right" style="font-weight:700;color:var(--text0);">${formatEuro(c.importo_totale)}</td>
+      <td class="text-center">${badgeRate}</td>
+      <td>${prossimaHtml}</td>
+      <td>${_badgeStato(statoComp)}</td>
       <td>
-        ${df ? formatDate(df) : '—'}
-        ${giorniLabel}
-      </td>
-      <td class="text-right" style="color:var(--text0);font-weight:700;">
-        ${formatEuro(c.valore || 0)}
-      </td>
-      <td>${_badgeStato(c.stato)}</td>
-      <td>
-        <div class="azioni-cell">
-          <button class="btn btn-secondary btn-sm btn-modifica" data-id="${c.id}" title="Modifica">
-            ${ICONS.edit} Modifica
+        <div class="azioni-cell" style="justify-content:flex-end;gap:6px;">
+          <button class="btn btn-secondary btn-sm btn-modifica" data-id="${c.id}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Modifica
           </button>
-          <button class="btn btn-danger btn-sm btn-elimina" data-id="${c.id}" title="Elimina">
-            ${ICONS.trash}
+          <button class="btn btn-danger btn-sm btn-elimina" data-id="${c.id}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
         </div>
       </td>
@@ -268,16 +245,13 @@ function _renderTabella () {
   if (tbody) {
     tbody.innerHTML = righe
 
-    // ── Attacca i listener ai bottoni delle righe ────────
-    // Modifica
+    // Listener bottoni modifica / elimina
     tbody.querySelectorAll('.btn-modifica').forEach(btn => {
       btn.addEventListener('click', () => {
-        const contratto = _tuttiContratti.find(c => c.id === btn.dataset.id)
-        if (contratto) _apriModalModifica(contratto)
+        const c = _contratti.find(x => x.id === btn.dataset.id)
+        if (c) _apriModalModifica(c)
       })
     })
-
-    // Elimina
     tbody.querySelectorAll('.btn-elimina').forEach(btn => {
       btn.addEventListener('click', () => _eliminaContratto(btn.dataset.id))
     })
@@ -286,202 +260,540 @@ function _renderTabella () {
 
 
 // ============================================================
-// MODAL — Apri per NUOVO contratto
+// EVENTI UI
 // ============================================================
-function _apriModalNuovo () {
-  // Pulisce il form e imposta il titolo
-  _resetForm()
-  const elTitolo = document.getElementById('modal-contratto-title')
-  if (elTitolo) elTitolo.textContent = 'Nuovo contratto'
+function _collegaEventi() {
+  // Ricerca
+  document.getElementById('input-ricerca')
+    ?.addEventListener('input', e => {
+      _testoRicerca = e.target.value.toLowerCase().trim()
+      _renderTabella()
+    })
 
-  // Imposta lo stato di default su "attivo"
-  const elStato = document.getElementById('f-stato')
-  if (elStato) elStato.value = 'attivo'
+  // Chip filtro stato
+  document.getElementById('filtri-stato')
+    ?.querySelectorAll('.chip-stato')
+    .forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.chip-stato').forEach(c => c.classList.remove('active'))
+        chip.classList.add('active')
+        _filtroStato = chip.dataset.stato
+        _renderTabella()
+      })
+    })
 
-  // Apre il modal con animazione
-  const overlay = document.getElementById('modal-contratto')
-  if (overlay) overlay.classList.add('open')
+  // Nuovo contratto
+  document.getElementById('btn-nuovo')
+    ?.addEventListener('click', _apriModalNuovo)
 
-  // Focus sul primo campo
-  setTimeout(() => document.getElementById('f-numero')?.focus(), 150)
+  // Annulla modal
+  document.getElementById('btn-annulla')
+    ?.addEventListener('click', _chiudiModal)
+
+  document.getElementById('modal-contratto-close')
+    ?.addEventListener('click', _chiudiModal)
+
+  document.getElementById('modal-contratto')
+    ?.addEventListener('click', e => {
+      if (e.target.id === 'modal-contratto') _chiudiModal()
+    })
+
+  // Salva
+  document.getElementById('btn-salva')
+    ?.addEventListener('click', _salvaContratto)
+
+  // Calcolo automatico IVA contratto
+  document.getElementById('f-imponibile')
+    ?.addEventListener('input', _aggiornaTotaleContratto)
+  document.getElementById('f-iva-rate')
+    ?.addEventListener('change', _aggiornaTotaleContratto)
+
+  // Aggiungi rata
+  document.getElementById('btn-aggiungi-rata')
+    ?.addEventListener('click', () => _aggiungiRigaRata())
+
+  // Modal dettaglio rate
+  document.getElementById('modal-rate-close')
+    ?.addEventListener('click', () => _chiudiModalRate())
+  document.getElementById('modal-rate-chiudi')
+    ?.addEventListener('click', () => _chiudiModalRate())
+  document.getElementById('modal-rate-dettaglio')
+    ?.addEventListener('click', e => {
+      if (e.target.id === 'modal-rate-dettaglio') _chiudiModalRate()
+    })
+
+  // Espone funzione dettaglio rate al DOM
+  window.__contrattiDettaglioRate = _apriDettaglioRate
 }
 
 
 // ============================================================
-// MODAL — Apri per MODIFICA contratto esistente
+// TOTALE CONTRATTO — calcolo automatico
 // ============================================================
-function _apriModalModifica (c) {
-  _resetForm()
+function _aggiornaTotaleContratto() {
+  const imponibile = parseFloat(document.getElementById('f-imponibile')?.value) || 0
+  const ivaRate    = parseFloat(document.getElementById('f-iva-rate')?.value)   || 0
+  const iva        = imponibile * ivaRate / 100
+  const totale     = imponibile + iva
 
-  // Aggiorna titolo modal
-  const elTitolo = document.getElementById('modal-contratto-title')
-  if (elTitolo) elTitolo.textContent = `Modifica contratto ${c.numero || ''}`
+  const elIva  = document.getElementById('f-iva-importo')
+  const elTot  = document.getElementById('f-totale')
+  if (elIva) elIva.value = iva > 0 ? _fmt2(iva) : '0,00'
+  if (elTot) elTot.value = totale > 0 ? _fmt2(totale) : '0,00'
 
-  // Popola tutti i campi del form con i dati del contratto
-  _setVal('f-id',          c.id)
-  _setVal('f-numero',      c.numero    || '')
-  _setVal('f-cliente',     c.cliente   || '')
-  _setVal('f-data-inizio', toInputDate(_toDate(c.data_inizio)))
-  _setVal('f-data-fine',   toInputDate(_toDate(c.data_fine)))
-  _setVal('f-valore',      c.valore != null ? c.valore : '')
-  _setVal('f-stato',       c.stato     || 'attivo')
-  _setVal('f-note',        c.note      || '')
-
-  // Apre il modal
-  const overlay = document.getElementById('modal-contratto')
-  if (overlay) overlay.classList.add('open')
+  _aggiornaTotaliRiepilogo()
 }
 
 
 // ============================================================
-// MODAL — Chiudi e pulisci
+// RATE — AGGIUNGI RIGA NEL FORM
 // ============================================================
-function _chiudiModal () {
-  const overlay = document.getElementById('modal-contratto')
-  if (overlay) overlay.classList.remove('open')
-  _resetForm()
+function _aggiungiRigaRata(dati = {}) {
+  const container   = document.getElementById('rate-container')
+  const emptyHint   = document.getElementById('rate-empty-hint')
+  const rataHeader  = document.getElementById('rata-header')
+
+  // Nascondi hint, mostra header
+  if (emptyHint)  emptyHint.style.display  = 'none'
+  if (rataHeader) rataHeader.style.display = 'grid'
+
+  // ID temporaneo per questa riga nel DOM
+  const tempId = `r_${Date.now()}_${Math.random().toString(36).substr(2,5)}`
+
+  // Opzioni aliquote IVA
+  const opzioniIva = ALIQUOTE_IVA.map(a =>
+    `<option value="${a.v}" ${a.v === (dati.iva_rate ?? 22) ? 'selected' : ''}>${a.l}</option>`
+  ).join('')
+
+  const riga = document.createElement('div')
+  riga.className  = 'rata-row'
+  riga.dataset.tempId = tempId
+  if (dati.id) riga.dataset.rataId = dati.id   // se è rata esistente
+
+  riga.innerHTML = `
+    <input type="text"   class="r-desc"   placeholder="es. Acconto"  value="${_esc(dati.descrizione || '')}"/>
+    <input type="number" class="r-imp"    placeholder="0.00"          value="${dati.importo_imponibile || ''}" min="0" step="0.01"/>
+    <select class="r-iva">${opzioniIva}</select>
+    <input type="text"   class="r-ivaimp" readonly value="${dati.importo_iva ? _fmt2(dati.importo_iva) : ''}"/>
+    <input type="text"   class="r-tot"   readonly value="${dati.importo_totale ? _fmt2(dati.importo_totale) : ''}"/>
+    <input type="date"   class="r-data"  value="${dati.data_prevista ? toInputDate(_toDate(dati.data_prevista)) : ''}"/>
+    <button type="button" class="btn-rata-remove" title="Rimuovi rata">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  `
+
+  // Listener calcolo automatico IVA per questa riga
+  const inpImp = riga.querySelector('.r-imp')
+  const selIva = riga.querySelector('.r-iva')
+  const inpIvaImp = riga.querySelector('.r-ivaimp')
+  const inpTot = riga.querySelector('.r-tot')
+
+  const calcola = () => {
+    const imp  = parseFloat(inpImp.value) || 0
+    const rate = parseFloat(selIva.value) || 0
+    const iva  = imp * rate / 100
+    const tot  = imp + iva
+    inpIvaImp.value = _fmt2(iva)
+    inpTot.value    = _fmt2(tot)
+    _aggiornaTotaliRiepilogo()
+  }
+
+  inpImp.addEventListener('input',  calcola)
+  selIva.addEventListener('change', calcola)
+
+  // Rimuovi riga
+  riga.querySelector('.btn-rata-remove').addEventListener('click', () => {
+    // Se rata esistente: segna per eliminazione
+    if (riga.dataset.rataId) _rateEliminate.push(riga.dataset.rataId)
+    riga.remove()
+    _aggiornaVisiblitaHeader()
+    _aggiornaTotaliRiepilogo()
+  })
+
+  container.appendChild(riga)
+  _aggiornaTotaliRiepilogo()
 }
 
-function _resetForm () {
-  const form = document.getElementById('form-contratto')
-  if (form) form.reset()
-  // Svuota anche l'id nascosto
-  const elId = document.getElementById('f-id')
-  if (elId) elId.value = ''
+
+// ============================================================
+// RATA — mostra/nascondi header colonne
+// ============================================================
+function _aggiornaVisiblitaHeader() {
+  const container  = document.getElementById('rate-container')
+  const emptyHint  = document.getElementById('rate-empty-hint')
+  const rataHeader = document.getElementById('rata-header')
+  const hasRighe   = container?.querySelectorAll('.rata-row').length > 0
+
+  if (emptyHint)  emptyHint.style.display  = hasRighe ? 'none' : 'block'
+  if (rataHeader) rataHeader.style.display = hasRighe ? 'grid' : 'none'
 }
 
 
 // ============================================================
-// FIRESTORE — Salva (aggiunge o aggiorna) un contratto
+// RIEPILOGO RATE vs TOTALE CONTRATTO
 // ============================================================
-async function _salvaContratto () {
+function _aggiornaTotaliRiepilogo() {
+  const container = document.getElementById('rate-container')
+  const elRiep    = document.getElementById('rate-riepilogo')
+  const elCalc    = document.getElementById('rate-totale-calcolato')
+  const elCont    = document.getElementById('rate-totale-contratto')
+  const elDiffRow = document.getElementById('rate-diff-row')
+  const elDiffMsg = document.getElementById('rate-diff-msg')
 
-  // ── Legge i valori dal form ──────────────────────────────
-  const id          = _getVal('f-id')         // vuoto = nuovo contratto
-  const numero      = _getVal('f-numero').trim()
-  const cliente     = _getVal('f-cliente').trim()
-  const dataInizio  = _getVal('f-data-inizio')
-  const dataFine    = _getVal('f-data-fine')
-  const valore      = parseFloat(_getVal('f-valore')) || 0
-  const stato       = _getVal('f-stato')
-  const note        = _getVal('f-note').trim()
+  const righe = container?.querySelectorAll('.rata-row') || []
 
-  // ── Validazione base ─────────────────────────────────────
-  if (!numero)     { toast('Inserisci il numero contratto.',  'error'); return }
-  if (!cliente)    { toast('Inserisci il nome del cliente.',  'error'); return }
-  if (!dataInizio) { toast('Inserisci la data di inizio.',    'error'); return }
-  if (!dataFine)   { toast('Inserisci la data di fine.',      'error'); return }
-  if (dataFine < dataInizio) {
-    toast('La data di fine non può essere prima della data di inizio.', 'error')
+  if (!righe.length) {
+    if (elRiep) elRiep.style.display = 'none'
     return
   }
 
-  // ── Costruisce il documento da salvare ───────────────────
-  const dati = {
-    numero,
+  if (elRiep) elRiep.style.display = 'block'
+
+  // Somma totale rate
+  let totRate = 0
+  righe.forEach(riga => {
+    totRate += parseFloat(riga.querySelector('.r-tot')?.value) || 0
+  })
+
+  // Totale contratto dal form
+  const imponibile = parseFloat(document.getElementById('f-imponibile')?.value) || 0
+  const ivaRate    = parseFloat(document.getElementById('f-iva-rate')?.value)   || 0
+  const totContratto = imponibile + (imponibile * ivaRate / 100)
+
+  if (elCalc) elCalc.textContent = formatEuro(totRate)
+  if (elCont) elCont.textContent = formatEuro(totContratto)
+
+  // Mostra differenza se presente
+  const diff = Math.abs(totRate - totContratto)
+  if (diff > 0.01 && totContratto > 0) {
+    if (elDiffRow) elDiffRow.style.display = 'block'
+    if (elDiffMsg) {
+      const segno = totRate > totContratto ? 'eccedenza' : 'differenza'
+      elDiffMsg.style.color = 'var(--amber)'
+      elDiffMsg.textContent = `⚠ ${segno} di ${formatEuro(diff)} rispetto al totale contratto`
+    }
+  } else {
+    if (elDiffRow) elDiffRow.style.display = 'none'
+  }
+}
+
+
+// ============================================================
+// MODAL — APRI NUOVO
+// ============================================================
+function _apriModalNuovo() {
+  _contrattoInEdit = null
+  _rateForm        = []
+  _rateEliminate   = []
+
+  document.getElementById('f-id').value          = ''
+  document.getElementById('f-cliente').value     = ''
+  document.getElementById('f-data-inizio').value = new Date().toISOString().split('T')[0]
+  document.getElementById('f-stato').value       = 'corrente'
+  document.getElementById('f-imponibile').value  = ''
+  document.getElementById('f-iva-rate').value    = '22'
+  document.getElementById('f-iva-importo').value = ''
+  document.getElementById('f-totale').value      = ''
+  document.getElementById('f-modalita').value    = ''
+  document.getElementById('f-note').value        = ''
+  document.getElementById('modal-contratto-title').textContent = 'Nuovo contratto'
+
+  // Pulisce rate container
+  _svuotaRateContainer()
+
+  document.getElementById('modal-contratto').classList.add('open')
+  setTimeout(() => document.getElementById('f-cliente')?.focus(), 150)
+}
+
+
+// ============================================================
+// MODAL — APRI MODIFICA
+// ============================================================
+function _apriModalModifica(c) {
+  _contrattoInEdit = c.id
+  _rateEliminate   = []
+
+  document.getElementById('f-id').value          = c.id
+  document.getElementById('f-cliente').value     = c.cliente     || ''
+  document.getElementById('f-data-inizio').value = toInputDate(_toDate(c.data_inizio))
+  document.getElementById('f-stato').value       = c.stato       || 'corrente'
+  document.getElementById('f-imponibile').value  = c.importo_imponibile ?? ''
+  document.getElementById('f-iva-rate').value    = c.iva_rate    ?? 22
+  document.getElementById('f-iva-importo').value = c.importo_iva ? _fmt2(c.importo_iva) : ''
+  document.getElementById('f-totale').value      = c.importo_totale ? _fmt2(c.importo_totale) : ''
+  document.getElementById('f-modalita').value    = c.modalita_pagamento || ''
+  document.getElementById('f-note').value        = c.note        || ''
+  document.getElementById('modal-contratto-title').textContent = `Modifica — ${c.cliente}`
+
+  // Popola rate
+  _svuotaRateContainer()
+  const rate = _rateMap[c.id] || []
+  rate.forEach(r => _aggiungiRigaRata(r))
+  _aggiornaTotaliRiepilogo()
+
+  document.getElementById('modal-contratto').classList.add('open')
+}
+
+
+// ============================================================
+// MODAL — CHIUDI
+// ============================================================
+function _chiudiModal() {
+  document.getElementById('modal-contratto').classList.remove('open')
+}
+
+function _svuotaRateContainer() {
+  const container = document.getElementById('rate-container')
+  if (!container) return
+  container.querySelectorAll('.rata-row').forEach(r => r.remove())
+  const emptyHint  = document.getElementById('rate-empty-hint')
+  const rataHeader = document.getElementById('rata-header')
+  if (emptyHint)  emptyHint.style.display  = 'block'
+  if (rataHeader) rataHeader.style.display = 'none'
+  const elRiep = document.getElementById('rate-riepilogo')
+  if (elRiep) elRiep.style.display = 'none'
+}
+
+
+// ============================================================
+// SALVA CONTRATTO + RATE
+// ============================================================
+async function _salvaContratto() {
+  const id         = document.getElementById('f-id').value
+  const cliente    = document.getElementById('f-cliente').value.trim()
+  const dataInizio = document.getElementById('f-data-inizio').value
+  const stato      = document.getElementById('f-stato').value
+  const imponibile = parseFloat(document.getElementById('f-imponibile').value)
+  const ivaRate    = parseFloat(document.getElementById('f-iva-rate').value) || 0
+  const modalita   = document.getElementById('f-modalita').value.trim()
+  const note       = document.getElementById('f-note').value.trim()
+
+  // Validazione
+  if (!cliente)    { toast('Inserisci il nome del cliente', 'error'); return }
+  if (!dataInizio) { toast('Inserisci la data di firma', 'error'); return }
+  if (!imponibile || imponibile <= 0) { toast('Inserisci un importo imponibile valido', 'error'); return }
+
+  const ivaImporto  = imponibile * ivaRate / 100
+  const totale      = imponibile + ivaImporto
+
+  const datiContratto = {
     cliente,
-    data_inizio: toTimestamp(dataInizio),
-    data_fine:   toTimestamp(dataFine),
-    valore,
+    data_inizio:          toTimestamp(dataInizio),
     stato,
-    note,
+    importo_imponibile:   imponibile,
+    iva_rate:             ivaRate,
+    importo_iva:          ivaImporto,
+    importo_totale:       totale,
+    modalita_pagamento:   modalita || null,
+    note:                 note || null,
   }
 
-  // Disabilita il bottone Salva durante il salvataggio
+  // Legge le righe rata dal DOM
+  const righeRata = document.getElementById('rate-container')?.querySelectorAll('.rata-row') || []
+  const rateValide = []
+
+  for (const riga of righeRata) {
+    const desc  = riga.querySelector('.r-desc')?.value.trim()
+    const imp   = parseFloat(riga.querySelector('.r-imp')?.value)
+    const ivaPct = parseFloat(riga.querySelector('.r-iva')?.value) || 0
+    const data  = riga.querySelector('.r-data')?.value
+    const rataId = riga.dataset.rataId || null // se modifica
+
+    if (!data) { toast('Inserisci la data prevista per tutte le rate', 'error'); return }
+    if (!imp || imp <= 0) { toast('Inserisci un importo valido per tutte le rate', 'error'); return }
+
+    const rataIva  = imp * ivaPct / 100
+    const rataTot  = imp + rataIva
+
+    rateValide.push({
+      rataId,
+      dati: {
+        descrizione:         desc || 'Rata',
+        importo_imponibile:  imp,
+        iva_rate:            ivaPct,
+        importo_iva:         rataIva,
+        importo_totale:      rataTot,
+        data_prevista:       toTimestamp(data),
+        data_pagamento:      null,
+        stato:               'attesa',
+      }
+    })
+  }
+
+  // Disabilita bottone
   const btnSalva = document.getElementById('btn-salva')
   if (btnSalva) { btnSalva.disabled = true; btnSalva.textContent = 'Salvataggio...' }
 
   try {
+    let contrattoId = id
+
     if (id) {
-      // ── AGGIORNA contratto esistente ─────────────────────
-      await collections.contratti().doc(id).update(dati)
-      toast(`Contratto ${numero} aggiornato ✓`, 'success')
+      // Aggiorna contratto esistente
+      await collections.contratti().doc(id).update(datiContratto)
     } else {
-      // ── AGGIUNGE nuovo contratto ─────────────────────────
-      dati.createdAt = firebase.firestore.FieldValue.serverTimestamp()
-      await collections.contratti().add(dati)
-      toast(`Contratto ${numero} creato ✓`, 'success')
+      // Crea nuovo contratto
+      datiContratto.createdAt = FieldValue.serverTimestamp()
+      const ref = await collections.contratti().add(datiContratto)
+      contrattoId = ref.id
     }
 
-    // Chiude modal e ricarica lista
+    // Elimina rate segnate per cancellazione
+    for (const rataId of _rateEliminate) {
+      await collections.rate().doc(rataId).delete()
+    }
+
+    // Salva / aggiorna rate
+    for (const { rataId, dati } of rateValide) {
+      dati.contratto_ref = contrattoId
+      dati.cliente       = cliente
+
+      if (rataId) {
+        // Aggiorna rata esistente
+        await collections.rate().doc(rataId).update(dati)
+      } else {
+        // Nuova rata
+        dati.createdAt = FieldValue.serverTimestamp()
+        await collections.rate().add(dati)
+      }
+    }
+
+    toast(id ? `Contratto aggiornato ✓` : `Contratto creato ✓`, 'success')
     _chiudiModal()
-    await _caricaContratti()
+    await _caricaDati()
+    _renderTabella()
 
   } catch (err) {
     console.error('Contratti: errore salvataggio →', err)
     toast('Errore nel salvataggio. Riprova.', 'error')
   } finally {
-    // Riabilita il bottone Salva in ogni caso
     if (btnSalva) {
       btnSalva.disabled = false
-      btnSalva.innerHTML = `${ICONS.check} Salva contratto`
+      btnSalva.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Salva contratto`
     }
   }
 }
 
 
 // ============================================================
-// FIRESTORE — Elimina un contratto
+// ELIMINA CONTRATTO + RATE ASSOCIATE
 // ============================================================
-async function _eliminaContratto (id) {
-
-  // Trova il contratto per mostrare il nome nel dialogo
-  const c = _tuttiContratti.find(x => x.id === id)
-  const label = c ? `il contratto ${c.numero} — ${c.cliente}` : 'questo contratto'
-
-  // Chiede conferma prima di eliminare (utility da utils.js)
-  const confermato = await confirmDelete(
-    `Sei sicuro di voler eliminare ${label}? Questa azione è irreversibile.`
-  )
-  if (!confermato) return
+async function _eliminaContratto(id) {
+  const c = _contratti.find(x => x.id === id)
+  if (!confirmDelete(`Eliminare il contratto di ${c?.cliente || 'questo cliente'}? Verranno eliminate anche le rate associate.`)) return
 
   try {
-    await collections.contratti().doc(id).delete()
-    toast('Contratto eliminato.', 'success')
+    // Elimina prima tutte le rate
+    const rateAssociate = _rateMap[id] || []
+    for (const r of rateAssociate) {
+      await collections.rate().doc(r.id).delete()
+    }
 
-    // Rimuove dalla lista locale e ri-renderizza senza fare un'altra chiamata Firebase
-    _tuttiContratti = _tuttiContratti.filter(x => x.id !== id)
+    // Poi elimina il contratto
+    await collections.contratti().doc(id).delete()
+    toast('Contratto eliminato', 'success')
+
+    await _caricaDati()
     _renderTabella()
 
   } catch (err) {
     console.error('Contratti: errore eliminazione →', err)
-    toast('Errore durante l\'eliminazione. Riprova.', 'error')
+    toast("Errore nell'eliminazione", 'error')
   }
 }
 
 
 // ============================================================
-// UTILITY PRIVATE
+// MODAL — DETTAGLIO RATE (vista read-only)
+// ============================================================
+function _apriDettaglioRate(contrattoId) {
+  const c    = _contratti.find(x => x.id === contrattoId)
+  const rate = (_rateMap[contrattoId] || []).sort((a, b) =>
+    _toDate(a.data_prevista) - _toDate(b.data_prevista)
+  )
+
+  const title = document.getElementById('modal-rate-title')
+  if (title) title.textContent = `Rate — ${c?.cliente || ''}`
+
+  const body = document.getElementById('rate-dettaglio-body')
+  if (!body) return
+
+  if (!rate.length) {
+    body.innerHTML = '<div class="empty-state"><p>Nessuna rata programmata per questo contratto.</p></div>'
+  } else {
+    // Header
+    const header = `<div style="display:grid;grid-template-columns:1.5fr 100px 100px 110px 80px;gap:8px;padding:0 12px 8px;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text2);">
+      <span>Descrizione</span><span>Data prevista</span><span>Totale</span><span>Data pagamento</span><span>Stato</span>
+    </div>`
+
+    const righe = rate.map(r => {
+      const statoClass = r.stato === 'pagata' ? 'pagata' : (r.stato === 'scaduta' ? 'scaduta' : '')
+      const statoHtml = r.stato === 'pagata'
+        ? '<span class="badge badge-green">Pagata</span>'
+        : r.stato === 'scaduta'
+        ? '<span class="badge badge-red">Scaduta</span>'
+        : '<span class="badge badge-amber">In attesa</span>'
+
+      return `<div class="rate-dettaglio-row ${statoClass}">
+        <div>
+          <div style="font-weight:600;color:var(--text0);">${_esc(r.descrizione || 'Rata')}</div>
+          <div style="font-size:10px;color:var(--text2);">Imponibile: ${formatEuro(r.importo_imponibile)} + IVA ${r.iva_rate}%</div>
+        </div>
+        <div style="font-size:12px;">${r.data_prevista ? formatDate(_toDate(r.data_prevista)) : '—'}</div>
+        <div style="font-weight:700;color:var(--text0);">${formatEuro(r.importo_totale)}</div>
+        <div style="font-size:11px;color:var(--text2);">${r.data_pagamento ? formatDate(_toDate(r.data_pagamento)) : '—'}</div>
+        <div>${statoHtml}</div>
+      </div>`
+    }).join('')
+
+    // Totale
+    const totPagate   = rate.filter(r => r.stato === 'pagata').reduce((s, r) => s + (r.importo_totale || 0), 0)
+    const totAttesa   = rate.filter(r => r.stato === 'attesa').reduce((s, r) => s + (r.importo_totale || 0), 0)
+    const totRiepilogo = `<div style="margin-top:12px;padding:10px 12px;background:var(--bg1);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:12px;">
+      <div class="flex-center gap-8" style="justify-content:space-between;">
+        <span style="color:var(--green);font-weight:600;">✓ Pagato</span>
+        <span style="font-weight:700;">${formatEuro(totPagate)}</span>
+      </div>
+      <div class="flex-center gap-8" style="justify-content:space-between;margin-top:4px;">
+        <span style="color:var(--amber);font-weight:600;">◷ In attesa</span>
+        <span style="font-weight:700;">${formatEuro(totAttesa)}</span>
+      </div>
+    </div>`
+
+    body.innerHTML = header + righe + totRiepilogo
+  }
+
+  document.getElementById('modal-rate-dettaglio').classList.add('open')
+}
+
+function _chiudiModalRate() {
+  document.getElementById('modal-rate-dettaglio')?.classList.remove('open')
+}
+
+
+// ============================================================
+// UTILITY
 // ============================================================
 
-/**
- * Converte un valore data Firestore (Timestamp | Date | string) in Date JS.
- * Gestisce tutti e tre i formati possibili.
- */
-function _toDate (val) {
+function _toDate(val) {
   if (!val) return null
-  if (typeof val.toDate === 'function') return val.toDate()  // Firestore Timestamp
+  if (typeof val.toDate === 'function') return val.toDate()
   const d = new Date(val)
   return isNaN(d) ? null : d
 }
 
-/**
- * Restituisce il badge HTML colorato per ogni stato contratto.
- * Colori coerenti con il design system di base.css.
- */
-function _badgeStato (stato) {
+function _badgeStato(stato) {
   const mappa = {
-    attivo:   ['badge-green',  'Attivo'],
-    scaduto:  ['badge-red',    'Scaduto'],
-    sospeso:  ['badge-amber',  'Sospeso'],
-    concluso: ['badge-gray',   'Concluso'],
+    corrente:    ['badge-green',  'Corrente'],
+    in_scadenza: ['badge-amber',  'In scadenza'],
+    scaduto:     ['badge-red',    'Scaduto'],
+    sospeso:     ['badge-gray',   'Sospeso'],
+    concluso:    ['badge-blue',   'Concluso'],
   }
   const [cls, label] = mappa[stato] || ['badge-gray', stato || '—']
   return `<span class="badge ${cls}">${label}</span>`
 }
 
-/** Escape HTML — previene attacchi XSS */
-function _esc (str) {
+function _esc(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -489,13 +801,8 @@ function _esc (str) {
     .replace(/"/g, '&quot;')
 }
 
-/** Legge il valore di un campo del form */
-function _getVal (id) {
-  return document.getElementById(id)?.value || ''
-}
-
-/** Imposta il valore di un campo del form */
-function _setVal (id, val) {
-  const el = document.getElementById(id)
-  if (el) el.value = val ?? ''
+// Formatta numero con 2 decimali (per i campi readonly)
+function _fmt2(n) {
+  if (isNaN(n) || n === null) return '0,00'
+  return new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
 }
