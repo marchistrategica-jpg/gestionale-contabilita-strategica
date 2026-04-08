@@ -202,8 +202,9 @@ function _renderTabella() {
     if (statoComp === 'in_scadenza') rowClass = 'row-in-scadenza'
 
     // Conteggio rate pagate
-    const rateTot    = rate.length
-    const ratePagate = rate.filter(r => r.stato === 'pagata').length
+    const rateTot         = rate.length
+    const ratePagate      = rate.filter(r => r.stato === 'pagata').length
+    const rateAttesaCount = rate.filter(r => r.stato === 'attesa').length
 
     // Prossima rata in attesa
     const prossima = rate
@@ -246,7 +247,13 @@ function _renderTabella() {
       <td>${prossimaHtml}</td>
       <td>${_badgeStato(statoComp)}</td>
       <td>
-        <div class="azioni-cell" style="justify-content:flex-end;gap:6px;">
+        <div class="azioni-cell" style="justify-content:flex-end;gap:6px;flex-wrap:wrap;">
+          ${rateAttesaCount > 0 ? `
+          <button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;"
+            onclick="window.__contrattiDettaglioRate('${c.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Registra pagamento
+          </button>` : ''}
           <button class="btn btn-secondary btn-sm btn-modifica" data-id="${c.id}">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Modifica
