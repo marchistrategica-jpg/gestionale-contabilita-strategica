@@ -2,39 +2,85 @@
      MODULO: DASHBOARD
      File: modules/dashboard.html
      JS:   js/modules/dashboard.js (caricato automaticamente dal router)
+     
+     DIPENDENZE (già nella shell index.html):
+       - css/base.css       → kpi-grid, kpi-card, table-wrap, table-head,
+                              card-title, badge, btn, spinner, loading, empty-state
+       - js/utils.js        → formatEuro, formatDate, formatDateShort
+     
+     Chart.js viene caricato qui dal CDN se non già presente.
      ============================================================ -->
 
-<!-- KPI Cards -->
+<!-- Carica Chart.js una sola volta (controllo su window.Chart) -->
+<script>
+  if (!window.Chart) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    document.head.appendChild(s);
+  }
+</script>
+
+<!-- ── KPI Cards ─────────────────────────────────────────────── -->
 <div class="kpi-grid" id="kpi-grid">
+
   <div class="kpi-card primary">
     <div class="kpi-label">Fatturato YTD</div>
     <div class="kpi-value" id="kpi-fatturato">—</div>
     <div class="kpi-sub">Anno corrente</div>
   </div>
+
   <div class="kpi-card green">
     <div class="kpi-label">Incassi del mese</div>
     <div class="kpi-value" id="kpi-incassi">—</div>
     <div class="kpi-sub" id="kpi-incassi-sub">Mese corrente</div>
   </div>
+
   <div class="kpi-card red">
     <div class="kpi-label">Pagamenti del mese</div>
     <div class="kpi-value" id="kpi-pagamenti">—</div>
     <div class="kpi-sub">Uscite mese corrente</div>
   </div>
+
   <div class="kpi-card secondary">
     <div class="kpi-label">Contratti attivi</div>
     <div class="kpi-value" id="kpi-contratti">—</div>
     <div class="kpi-sub">In corso</div>
   </div>
+
   <div class="kpi-card amber">
     <div class="kpi-label">Saldo conti</div>
     <div class="kpi-value" id="kpi-saldo">—</div>
     <div class="kpi-sub">Totale liquidità</div>
   </div>
+
 </div>
 
-<!-- Riga tabelle recenti -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+<!-- ── Grafico andamento mensile ─────────────────────────────── -->
+<div class="table-wrap" style="margin-bottom:16px;">
+  <div class="table-head">
+    <span class="card-title">Andamento ultimi 6 mesi</span>
+    <span class="text-muted" style="font-size:11px;font-weight:500;">Incassi vs Uscite</span>
+  </div>
+
+  <!-- Loading iniziale -->
+  <div class="loading" id="chart-loading">
+    <div class="spinner"></div>
+    Caricamento grafico...
+  </div>
+
+  <!-- Canvas Chart.js (nascosto finché non ci sono dati) -->
+  <div id="chart-wrap" style="display:none; padding:16px 20px;">
+    <canvas id="chart-mensile" height="110"></canvas>
+  </div>
+
+  <!-- Stato vuoto -->
+  <div class="empty-state" id="chart-empty" style="display:none;">
+    <p>Nessun dato disponibile. Registra movimenti per vedere il grafico.</p>
+  </div>
+</div>
+
+<!-- ── Tabelle: movimenti + contratti in scadenza ────────────── -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
 
   <!-- Ultimi movimenti -->
   <div class="table-wrap">
@@ -42,38 +88,84 @@
       <span class="card-title">Ultimi movimenti</span>
       <a href="#incassi" class="btn btn-secondary btn-sm">Vedi tutti</a>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Data</th>
-          <th>Descrizione</th>
-          <th class="text-right">Importo</th>
-        </tr>
-      </thead>
-      <tbody id="tb-movimenti">
-        <tr><td colspan="3" class="text-center text-muted" style="padding:24px">Caricamento...</td></tr>
-      </tbody>
-    </table>
+
+    <div class="loading" id="mov-loading">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="mov-wrap" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Descrizione</th>
+            <th>Tipo</th>
+            <th class="text-right">Importo</th>
+          </tr>
+        </thead>
+        <tbody id="tb-movimenti"></tbody>
+      </table>
+    </div>
+
+    <div class="empty-state" id="mov-empty" style="display:none;">
+      <p>Nessun movimento registrato.</p>
+    </div>
   </div>
 
-  <!-- Contratti in scadenza -->
+  <!-- Contratti in scadenza nei prossimi 60 giorni -->
   <div class="table-wrap">
     <div class="table-head">
       <span class="card-title">Contratti in scadenza</span>
       <a href="#contratti" class="btn btn-secondary btn-sm">Vedi tutti</a>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Cliente</th>
-          <th>Scadenza</th>
-          <th>Stato</th>
-        </tr>
-      </thead>
-      <tbody id="tb-contratti">
-        <tr><td colspan="3" class="text-center text-muted" style="padding:24px">Caricamento...</td></tr>
-      </tbody>
-    </table>
+
+    <div class="loading" id="sca-loading">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="sca-wrap" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Scadenza</th>
+            <th class="text-right">Valore</th>
+            <th>Stato</th>
+          </tr>
+        </thead>
+        <tbody id="tb-contratti"></tbody>
+      </table>
+    </div>
+
+    <div class="empty-state" id="sca-empty" style="display:none;">
+      <p>Nessun contratto in scadenza nei prossimi 60 giorni 🎉</p>
+    </div>
   </div>
 
 </div>
+
+<!-- ── Stili specifici del modulo Dashboard ───────────────────
+     Solo classi NON presenti in base.css.
+     Non ridefinire mai: kpi-card, table-wrap, badge, ecc.
+────────────────────────────────────────────────────────────── -->
+<style>
+/* Importo colorato nella tabella movimenti */
+.imp-incasso   { color: var(--green); font-weight: 700; }
+.imp-pagamento { color: var(--red);   font-weight: 700; }
+
+/* Giorni rimasti sotto la data di scadenza */
+.giorni-badge {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--amber);
+  margin-top: 2px;
+}
+
+/* Su mobile le due colonne diventano una */
+@media (max-width: 860px) {
+  div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+</style>
