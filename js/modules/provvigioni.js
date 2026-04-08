@@ -453,12 +453,10 @@ async function salvaProvvigione() {
       tutteProvvigioni.unshift({ id: ref.id, ...doc })
     }
 
-    // Crea movimento automatico se stato='pagata' e non era già pagata prima
-    if (stato === 'pagata' && !eraGiaPagata && savedId) {
+    // Crea O aggiorna il movimento collegato
+    if (stato === 'pagata') {
       const ts = doc.data_pagamento || firebase.firestore.Timestamp.fromDate(new Date())
-      const contoId  = doc.contratto_ref ? null : (document.getElementById('fp-conto')?.value || null)
-      const contoObj = tuttiConti.find(ct => ct.id === (doc.conto_pagamento || contoId))
-      await collections.movimenti().add({
+      const movDati = {
         tipo:            'pagamento',
         importo:         importo || 0,
         data:            ts,
@@ -471,11 +469,17 @@ async function salvaProvvigione() {
         iva_importo:     0,
         contratto_ref:   doc.contratto_ref || null,
         provvigione_ref: savedId,
-        createdAt:       FieldValue.serverTimestamp()
-      })
-      toast(`✓ Movimento di €${importo.toLocaleString('it-IT',{minimumFractionDigits:2})} registrato in Incassi & Pagamenti`, 'success', 5000)
+      }
+      if (eraGiaPagata && vecchiaProvv?.movimento_ref) {
+        await collections.movimenti().doc(vecchiaProvv.movimento_ref).update(movDati)
+        toast('✓ Provvigione e movimento in Incassi aggiornati', 'success', 4000)
+      } else if (!eraGiaPagata) {
+        movDati.createdAt = FieldValue.serverTimestamp()
+        const movRef = await collections.movimenti().add(movDati)
+        await collections.provvigioni().doc(savedId).update({ movimento_ref: movRef.id })
+        toast(`✓ Movimento di €${importo.toLocaleString('it-IT',{minimumFractionDigits:2})} registrato in Incassi & Pagamenti`, 'success', 5000)
+      }
     }
-
     closeModal('modal-prov')
     aggiornaVista()
 
@@ -518,8 +522,8 @@ async function segnaComePageta(id) {
       data_pagamento: oggiTs
     })
 
-    // 2. Crea movimento automatico in /movimenti (pagamento in uscita)
-    await collections.movimenti().add({
+    // 2. Crea movimento automatico e salva il riferimento
+    const movRef = await collections.movimenti().add({
       tipo:            'pagamento',
       importo:         p.importo || 0,
       data:            oggiTs,
@@ -534,6 +538,7 @@ async function segnaComePageta(id) {
       provvigione_ref: id,
       createdAt:       FieldValue.serverTimestamp()
     })
+    await collections.provvigioni().doc(id).update({ movimento_ref: movRef.id })
 
     // 3. Aggiorna stato locale
     p.stato          = 'pagata'
