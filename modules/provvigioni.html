@@ -1,0 +1,232 @@
+<!-- ============================================================
+     PROVVIGIONI.HTML — Modulo Provvigioni
+     Frammento HTML caricato dinamicamente dal router.
+     Non contiene <html>, <head> o <body>.
+     Tutta la logica è in js/modules/provvigioni.js
+     ============================================================ -->
+
+<style>
+  /* Stili specifici del modulo Provvigioni */
+  #prov-anno        { width: 110px; }
+  #prov-filters-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+</style>
+
+<!-- ── KPI CARDS ────────────────────────────────────────────── -->
+<div class="kpi-grid">
+
+  <div class="kpi-card primary">
+    <div class="kpi-label">Maturate YTD</div>
+    <div class="kpi-value" id="kpi-maturate">—</div>
+    <div class="kpi-sub"  id="kpi-maturate-n">— provvigioni</div>
+  </div>
+
+  <div class="kpi-card red">
+    <div class="kpi-label">Da pagare</div>
+    <div class="kpi-value" id="kpi-da-pagare">—</div>
+    <div class="kpi-sub"  id="kpi-da-pagare-n">— in attesa</div>
+  </div>
+
+  <div class="kpi-card green">
+    <div class="kpi-label">Pagate YTD</div>
+    <div class="kpi-value" id="kpi-pagate">—</div>
+    <div class="kpi-sub"  id="kpi-pagate-n">— liquidate</div>
+  </div>
+
+</div>
+
+<!-- ── TABELLA PROVVIGIONI ───────────────────────────────────── -->
+<div class="table-wrap">
+
+  <!-- Intestazione tabella: filtri + bottone nuovo -->
+  <div class="table-head">
+
+    <div id="prov-filters-row">
+
+      <!-- Ricerca testo libero -->
+      <div class="search-box">
+        <!-- Icona lente (SVG inline) -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          type="text"
+          class="search-input"
+          id="prov-search"
+          placeholder="Cerca agente, cliente…"
+        >
+      </div>
+
+      <!-- Chip: filtro stato -->
+      <div class="flex-center gap-8" id="prov-chips">
+        <button class="btn btn-primary  btn-sm" data-filter="tutte">Tutte</button>
+        <button class="btn btn-secondary btn-sm" data-filter="da_pagare">Da pagare</button>
+        <button class="btn btn-secondary btn-sm" data-filter="pagate">Pagate</button>
+      </div>
+
+      <!-- Selettore anno -->
+      <select class="form-control" id="prov-anno">
+        <!-- Opzioni generate da JS -->
+      </select>
+
+    </div>
+
+    <!-- Bottone nuova provvigione -->
+    <button class="btn btn-primary" id="btn-nuova-prov">
+      <!-- Icona + (SVG inline) -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5"  y1="12" x2="19" y2="12"/>
+      </svg>
+      Nuova provvigione
+    </button>
+
+  </div>
+
+  <!-- Tabella -->
+  <table id="prov-table">
+    <thead>
+      <tr>
+        <th>Agente</th>
+        <th>Cliente</th>
+        <th>Contratto</th>
+        <th>Data</th>
+        <th style="text-align:right">%</th>
+        <th style="text-align:right">Importo</th>
+        <th>Stato</th>
+        <th style="text-align:right">Azioni</th>
+      </tr>
+    </thead>
+    <tbody id="prov-tbody">
+      <!-- Righe inserite da JS -->
+    </tbody>
+  </table>
+
+  <!-- Stato vuoto (visibile solo se nessun risultato) -->
+  <div class="empty-state" id="prov-empty" style="display:none">
+    <!-- Icona documento (SVG inline) -->
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <line x1="19" y1="5" x2="5" y2="19"/>
+      <circle cx="6.5" cy="6.5" r="2.5"/>
+      <circle cx="17.5" cy="17.5" r="2.5"/>
+    </svg>
+    <p id="prov-empty-msg">Nessuna provvigione trovata.</p>
+  </div>
+
+</div><!-- /table-wrap -->
+
+
+<!-- ── MODAL AGGIUNGI / MODIFICA ─────────────────────────────── -->
+<div class="modal-overlay" id="modal-prov">
+  <div class="modal">
+
+    <div class="modal-header">
+      <span class="modal-title" id="modal-prov-title">Nuova provvigione</span>
+      <button class="modal-close" type="button">
+        <!-- Icona X (SVG inline) -->
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6"  x2="6"  y2="18"/>
+          <line x1="6"  y1="6"  x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <form id="form-prov" autocomplete="off">
+
+        <!-- Input nascosto: ID documento in modifica -->
+        <input type="hidden" id="fp-id">
+
+        <!-- Riga 1: Agente + Cliente -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fp-agente">Agente / Collaboratore *</label>
+            <input type="text" class="form-control" id="fp-agente"
+                   placeholder="Es. Mario Rossi" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="fp-cliente">Cliente</label>
+            <input type="text" class="form-control" id="fp-cliente"
+                   placeholder="Es. Acme S.r.l.">
+          </div>
+        </div>
+
+        <!-- Contratto collegato (opzionale) -->
+        <div class="form-group">
+          <label class="form-label" for="fp-contratto">Contratto collegato
+            <span class="text-muted" style="font-weight:400">(opzionale)</span>
+          </label>
+          <select class="form-control" id="fp-contratto">
+            <option value="">— Nessun contratto —</option>
+            <!-- Opzioni caricate da JS -->
+          </select>
+          <small id="fp-contratto-valore" class="text-muted mt-4"
+                 style="display:none;font-size:11px">
+            Valore contratto: <strong id="fp-cv-label">—</strong>
+          </small>
+        </div>
+
+        <!-- Riga 2: Data + Percentuale + Importo -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fp-data">Data maturazione *</label>
+            <input type="date" class="form-control" id="fp-data" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="fp-percentuale">% Provvigione</label>
+            <input type="number" class="form-control" id="fp-percentuale"
+                   placeholder="Es. 5" min="0" max="100" step="0.1">
+          </div>
+        </div>
+
+        <!-- Importo (calcolato automaticamente se % + contratto, altrimenti manuale) -->
+        <div class="form-group">
+          <label class="form-label" for="fp-importo">
+            Importo *
+            <span class="text-muted" style="font-weight:400;font-size:10px"
+                  id="fp-calc-hint">(inserisci manualmente o calcola da % + contratto)</span>
+          </label>
+          <input type="number" class="form-control" id="fp-importo"
+                 placeholder="Es. 500.00" min="0" step="0.01" required>
+        </div>
+
+        <!-- Riga 3: Stato -->
+        <div class="form-group">
+          <label class="form-label" for="fp-stato">Stato *</label>
+          <select class="form-control" id="fp-stato" required>
+            <option value="da_pagare">Da pagare</option>
+            <option value="pagata">Pagata</option>
+          </select>
+        </div>
+
+        <!-- Data pagamento (visibile solo se stato = pagata) -->
+        <div class="form-group" id="fp-row-data-pag" style="display:none">
+          <label class="form-label" for="fp-data-pag">Data pagamento</label>
+          <input type="date" class="form-control" id="fp-data-pag">
+        </div>
+
+        <!-- Note -->
+        <div class="form-group">
+          <label class="form-label" for="fp-note">Note</label>
+          <textarea class="form-control" id="fp-note" rows="2"
+                    placeholder="Note aggiuntive…"></textarea>
+        </div>
+
+      </form>
+    </div><!-- /modal-body -->
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary modal-close" type="button">Annulla</button>
+      <button class="btn btn-primary" id="btn-salva-prov" type="button">Salva</button>
+    </div>
+
+  </div><!-- /modal -->
+</div><!-- /modal-overlay -->
