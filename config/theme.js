@@ -28,17 +28,17 @@ export const THEME = {
   // --- LINK GESTIONALI ESTERNI ---
   // Appaiono come voci fisse in fondo alla sidebar
   externalLinks: [
-    {
-      label: 'Gestionale Commerciale 1',
-      url:   'https://inserisci-url-qui.com',
-      icon:  'external'
-    },
-    {
-      label: 'Gestionale Commerciale 2',
-      url:   'https://inserisci-url-qui.com',
-      icon:  'external'
-    }
-  ],
+  {
+    label: 'CRM Strategica',
+    url:   'https://gianlucamadeddu.github.io/crm-strategica/',
+    icon:  'external'
+  },
+  {
+    label: 'CRM Lead Manager',
+    url:   'https://gianlucamadeddu.github.io/strategica-lead-manager/',
+    icon:  'external'
+  }
+],
 
   // --- MENU PRINCIPALE ---
   // Per aggiungere una voce: aggiungi un oggetto a questo array.
