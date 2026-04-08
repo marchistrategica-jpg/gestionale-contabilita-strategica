@@ -1,10 +1,9 @@
 <!-- ============================================================
-     MODULO: Incassi & Pagamenti
-     Questo file viene iniettato nel main-content da router.js.
-     NON è una pagina completa — non ha <html>, <head>, <body>.
+     MODULO: Incassi & Pagamenti v2
+     Aggiunto: collegamento rate contratti
      ============================================================ -->
 
-<!-- ── KPI CARDS ─────────────────────────────────────────── -->
+<!-- ── KPI CARDS ─────────────────────────────────────────────── -->
 <div class="kpi-grid" id="kpi-grid">
   <div class="kpi-card green">
     <div class="kpi-label">Incassi mese</div>
@@ -19,7 +18,7 @@
   <div class="kpi-card secondary">
     <div class="kpi-label">Saldo netto mese</div>
     <div class="kpi-value" id="kpi-saldo-netto">—</div>
-    <div class="kpi-sub">incassi - pagamenti</div>
+    <div class="kpi-sub">incassi − pagamenti</div>
   </div>
   <div class="kpi-card primary">
     <div class="kpi-label">Incassi YTD</div>
@@ -28,106 +27,77 @@
   </div>
 </div>
 
-<!-- ── TABELLA MOVIMENTI ──────────────────────────────────── -->
+<!-- ── TABELLA MOVIMENTI ──────────────────────────────────────── -->
 <div class="table-wrap">
-
-  <!-- Intestazione tabella con filtri -->
   <div class="table-head">
     <div class="flex-center gap-8" style="flex-wrap:wrap;gap:8px;">
 
-      <!-- Ricerca testo -->
       <div class="search-box">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" class="search-input" id="cerca-input" placeholder="Cerca descrizione, categoria...">
       </div>
 
-      <!-- Chip tipo: Tutti / Incassi / Pagamenti -->
       <div class="flex-center gap-8" id="chip-tipo" style="gap:4px;">
         <button class="btn btn-secondary btn-sm chip-btn active" data-tipo="tutti">Tutti</button>
         <button class="btn btn-secondary btn-sm chip-btn" data-tipo="incasso">Incassi</button>
         <button class="btn btn-secondary btn-sm chip-btn" data-tipo="pagamento">Pagamenti</button>
       </div>
 
-      <!-- Selettore mese e anno -->
       <div class="flex-center" style="gap:6px;">
         <select class="form-control" id="filtro-mese" style="width:auto;padding:6px 10px;font-size:12px;">
-          <option value="1">Gennaio</option>
-          <option value="2">Febbraio</option>
-          <option value="3">Marzo</option>
-          <option value="4">Aprile</option>
-          <option value="5">Maggio</option>
-          <option value="6">Giugno</option>
-          <option value="7">Luglio</option>
-          <option value="8">Agosto</option>
-          <option value="9">Settembre</option>
-          <option value="10">Ottobre</option>
-          <option value="11">Novembre</option>
-          <option value="12">Dicembre</option>
+          <option value="1">Gennaio</option><option value="2">Febbraio</option>
+          <option value="3">Marzo</option><option value="4">Aprile</option>
+          <option value="5">Maggio</option><option value="6">Giugno</option>
+          <option value="7">Luglio</option><option value="8">Agosto</option>
+          <option value="9">Settembre</option><option value="10">Ottobre</option>
+          <option value="11">Novembre</option><option value="12">Dicembre</option>
         </select>
-        <select class="form-control" id="filtro-anno" style="width:auto;padding:6px 10px;font-size:12px;">
-          <!-- Anni popolati da JS -->
-        </select>
+        <select class="form-control" id="filtro-anno" style="width:auto;padding:6px 10px;font-size:12px;"></select>
       </div>
-
     </div>
 
-    <!-- Azioni destra -->
     <div class="flex-center gap-8">
       <button class="btn btn-secondary btn-sm" id="btn-export-csv">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Esporta CSV
       </button>
       <button class="btn btn-primary btn-sm" id="btn-nuovo">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nuovo movimento
       </button>
     </div>
   </div>
 
-  <!-- Tabella -->
   <div id="tabella-wrap">
-    <div class="loading">
-      <div class="spinner"></div>
-      Caricamento movimenti...
-    </div>
+    <div class="loading"><div class="spinner"></div>Caricamento movimenti...</div>
   </div>
+</div>
 
-</div><!-- /.table-wrap -->
 
-
-<!-- ── MODAL: NUOVO / MODIFICA MOVIMENTO ─────────────────── -->
+<!-- ── MODAL: NUOVO / MODIFICA MOVIMENTO ─────────────────────── -->
 <div class="modal-overlay" id="modal-movimento">
-  <div class="modal">
+  <div class="modal" style="max-width:600px;width:95%;">
 
     <div class="modal-header">
       <span class="modal-title" id="modal-titolo">Nuovo movimento</span>
       <button class="modal-close" id="modal-close-btn">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
 
-    <div class="modal-body">
-      <!-- ID movimento (nascosto, usato in modifica) -->
+    <div class="modal-body" style="max-height:78vh;overflow-y:auto;">
       <input type="hidden" id="mov-id">
+      <input type="hidden" id="mov-rata-ref">
 
       <!-- Tipo: Incasso / Pagamento -->
-      <div class="form-group">
+      <div class="form-group" style="margin-bottom:14px;">
         <label class="form-label">Tipo *</label>
         <div class="flex-center" style="gap:8px;">
-          <button type="button" class="btn btn-success btn-sm tipo-btn active" data-val="incasso" id="tipo-incasso">
+          <button type="button" class="btn btn-success btn-sm tipo-btn active" data-val="incasso">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
             Incasso
           </button>
-          <button type="button" class="btn btn-danger btn-sm tipo-btn" data-val="pagamento" id="tipo-pagamento">
+          <button type="button" class="btn btn-danger btn-sm tipo-btn" data-val="pagamento">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             Pagamento
           </button>
@@ -135,13 +105,43 @@
         <input type="hidden" id="mov-tipo" value="incasso">
       </div>
 
+      <!-- Contratto collegato — SEMPRE visibile -->
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Contratto collegato</label>
+        <select class="form-control" id="mov-contratto-ref">
+          <option value="">— Nessun contratto —</option>
+        </select>
+      </div>
+
+      <!-- ═══ SEZIONE RATA — visibile solo per incassi con contratto ═══ -->
+      <div id="mov-rata-section" style="display:none;margin-bottom:14px;padding:14px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius-sm);">
+        <div style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--secondary);margin-bottom:10px;">
+          ↳ Collega una rata del contratto
+        </div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label">Rata da saldare</label>
+          <select class="form-control" id="mov-rata-select">
+            <option value="">— Seleziona rata (opzionale) —</option>
+          </select>
+        </div>
+        <!-- Info rata selezionata -->
+        <div id="mov-rata-info" style="display:none;padding:8px 12px;background:var(--bg);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);font-size:11px;">
+          <div class="flex-center gap-8" style="justify-content:space-between;">
+            <span style="color:var(--text1);" id="mov-rata-desc">—</span>
+            <span style="font-weight:700;color:var(--green);" id="mov-rata-tot">—</span>
+          </div>
+          <div style="color:var(--text2);margin-top:3px;" id="mov-rata-data">—</div>
+          <div style="margin-top:6px;font-size:10px;color:var(--secondary);font-weight:600;">
+            ✓ Importo e IVA saranno compilati automaticamente
+          </div>
+        </div>
+      </div>
+
       <div class="form-row">
-        <!-- Data -->
         <div class="form-group">
           <label class="form-label">Data *</label>
           <input type="date" class="form-control" id="mov-data">
         </div>
-        <!-- Categoria -->
         <div class="form-group">
           <label class="form-label">Categoria *</label>
           <select class="form-control" id="mov-categoria">
@@ -153,65 +153,55 @@
             <option>Fornitori</option>
             <option>Utenze</option>
             <option>Tasse</option>
-            <option>Provvigioni</option>
+            <option>Provvigione</option>
+            <option>Compenso socio</option>
             <option>Altro</option>
           </select>
         </div>
       </div>
 
-      <!-- Descrizione -->
-      <div class="form-group">
+      <div class="form-group" style="margin-bottom:14px;">
         <label class="form-label">Descrizione *</label>
         <input type="text" class="form-control" id="mov-descrizione" placeholder="es. Fattura cliente XYZ">
       </div>
 
       <div class="form-row">
-        <!-- Importo (al netto IVA) -->
         <div class="form-group">
-          <label class="form-label">Importo netto (€) *</label>
+          <label class="form-label">Importo totale (€) *</label>
           <input type="number" class="form-control" id="mov-importo" placeholder="0.00" min="0" step="0.01">
         </div>
-        <!-- Aliquota IVA -->
         <div class="form-group">
           <label class="form-label">Aliquota IVA (%)</label>
           <select class="form-control" id="mov-iva-rate">
             <option value="0">0% (esente)</option>
             <option value="4">4%</option>
+            <option value="5">5%</option>
             <option value="10">10%</option>
             <option value="22" selected>22%</option>
           </select>
         </div>
       </div>
 
-      <!-- IVA calcolata — solo visualizzazione -->
-      <div class="form-group">
-        <label class="form-label">Importo IVA (calcolato automaticamente)</label>
-        <div style="padding:9px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:13px;font-weight:600;color:var(--text0);" id="mov-iva-display">€ 0,00</div>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">IVA (calcolata)</label>
+        <div style="padding:9px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--text0);" id="mov-iva-display">€ 0,00</div>
       </div>
 
       <div class="form-row">
-        <!-- Conto -->
         <div class="form-group">
           <label class="form-label">Conto</label>
-          <input type="text" class="form-control" id="mov-conto" placeholder="es. Conto corrente BNL">
-        </div>
-        <!-- Contratto collegato -->
-        <div class="form-group">
-          <label class="form-label">Contratto collegato</label>
-          <select class="form-control" id="mov-contratto-ref">
-            <option value="">Nessuno</option>
-            <!-- Popolato da JS con contratti da Firestore -->
+          <select class="form-control" id="mov-conto">
+            <option value="">— Seleziona conto —</option>
           </select>
         </div>
       </div>
 
-      <!-- Note -->
       <div class="form-group">
         <label class="form-label">Note</label>
-        <textarea class="form-control" id="mov-note" rows="2" placeholder="Note aggiuntive..."></textarea>
+        <textarea class="form-control" id="mov-note" rows="2" placeholder="Note aggiuntive..." style="resize:vertical;"></textarea>
       </div>
 
-    </div><!-- /.modal-body -->
+    </div>
 
     <div class="modal-footer">
       <button class="btn btn-secondary" id="btn-annulla">Annulla</button>
@@ -221,5 +211,12 @@
       </button>
     </div>
 
-  </div><!-- /.modal -->
-</div><!-- /.modal-overlay -->
+  </div>
+</div>
+
+<style>
+.text-green { color: var(--green); }
+.text-red   { color: var(--red);   }
+.fw-700     { font-weight: 700; }
+.font-mono  { font-family: monospace; }
+</style>
