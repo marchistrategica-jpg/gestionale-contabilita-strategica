@@ -96,15 +96,8 @@
             <label class="form-label" for="f-data-inizio">Data firma *</label>
             <input class="form-control" type="date" id="f-data-inizio" required/>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="f-stato">Stato</label>
-            <select class="form-control" id="f-stato">
-              <option value="corrente">Corrente</option>
-              <option value="sospeso">Sospeso</option>
-              <option value="concluso">Concluso</option>
-            </select>
-          </div>
         </div>
+        <input type="hidden" id="f-stato" value="corrente">
 
         <div class="form-row">
           <div class="form-group" style="flex:2;">
@@ -172,7 +165,7 @@
             <span>IVA %</span>
             <span>IVA €</span>
             <span>Totale €</span>
-            <span>Data prevista</span>
+            <span>Data scadenza</span>
             <span></span>
           </div>
 
@@ -270,7 +263,7 @@
 /* Riga rata nel piano pagamenti */
 .rata-row {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 80px 90px 90px 130px 36px;
+  grid-template-columns: 2fr 1.2fr 80px 90px 90px 120px 36px;
   gap: 6px;
   align-items: center;
   padding: 6px 8px;
@@ -281,7 +274,7 @@
 }
 .rata-header {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 80px 90px 90px 130px 36px;
+  grid-template-columns: 2fr 1.2fr 80px 90px 90px 120px 36px;
   gap: 6px;
   padding: 0 8px 5px;
   font-size: 9px;
@@ -364,3 +357,58 @@ textarea.form-control { min-height: 60px; }
   .rata-row, .rata-header { grid-template-columns: 1fr 1fr; }
 }
 </style>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — Registra pagamento rata
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-pagamento">
+  <div class="modal" style="max-width:480px;width:95%;">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-pag-title">Registra pagamento</span>
+      <button class="modal-close" id="modal-pag-close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="modal-pag-rata-id">
+      <input type="hidden" id="modal-pag-contratto-id">
+
+      <!-- Riepilogo rata -->
+      <div id="modal-pag-riepilogo" style="padding:14px;background:var(--bg1);border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:18px;">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">Rata da saldare</div>
+        <div style="font-size:16px;font-weight:800;color:var(--text0);" id="modal-pag-desc">—</div>
+        <div style="font-size:14px;font-weight:700;color:var(--primary);margin-top:4px;" id="modal-pag-importo">—</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;" id="modal-pag-scadenza">—</div>
+      </div>
+
+      <!-- Data pagamento -->
+      <div class="form-group">
+        <label class="form-label" style="font-size:13px;font-weight:700;color:var(--text0);">
+          📅 Data in cui il cliente ha pagato *
+        </label>
+        <input type="date" class="form-control" id="modal-pag-data"
+          style="font-size:15px;padding:10px 14px;font-weight:600;">
+      </div>
+
+      <!-- Conto -->
+      <div class="form-group">
+        <label class="form-label" style="font-size:13px;font-weight:700;color:var(--text0);">
+          🏦 Conto accreditato
+        </label>
+        <div id="modal-pag-conto-info" style="padding:10px 14px;background:var(--bg1);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:13px;font-weight:600;color:var(--secondary);">—</div>
+      </div>
+
+      <div style="padding:12px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);font-size:12px;color:var(--green);font-weight:600;">
+        ✓ Confermando, il pagamento verrà registrato automaticamente in Incassi, Dashboard e IVA
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="modal-pag-annulla">Annulla</button>
+      <button class="btn" id="modal-pag-conferma"
+        style="background:var(--green);color:#fff;border:none;font-size:13px;font-weight:700;padding:10px 20px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Conferma pagamento
+      </button>
+    </div>
+  </div>
+</div>
