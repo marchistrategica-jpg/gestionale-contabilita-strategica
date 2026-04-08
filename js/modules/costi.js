@@ -18,7 +18,6 @@ import { formatEuro, formatPercent, toast, confirmDelete } from '../../js/utils.
 
 // ── Stato locale ─────────────────────────────────────────────
 let tuttICosti = []
-let beChart    = null
 
 // Coefficienti per normalizzare a mensile
 const COEFF = {
@@ -47,8 +46,6 @@ function classCategoria(cat) {
 // ============================================================
 export async function init() {
   window.__costiModule = { openNew, openEdit, deleteCosto, saveCosto, closeModal }
-
-  await caricaChartJS()
 
   // Carica costi, movimenti e contratti in parallelo
   await Promise.all([
@@ -196,16 +193,10 @@ async function calcolaBreakEven() {
       }
     }
 
-    // ── Disegna grafico ──────────────────────────────────────
-    disegnaGrafico(
-      mesi12.map(m => m.label),
-      incassiPerMese,
-      contrattiPerMese,
-      fissiMensili
-    )
+    // ── Disegna barre di progresso ───────────────────────────
+    renderBarreBreakEven(fissiMensili, mediaIncassi, mediaContratti, mesiConIncassi.length, mesiConContratti.length)
 
     if (beLoading) beLoading.style.display = 'none'
-    if (beCanvas)  beCanvas.style.display  = 'block'
 
   } catch (err) {
     console.error('Errore calcolo break even:', err)
@@ -215,337 +206,69 @@ async function calcolaBreakEven() {
 
 
 // ============================================================
-// GRAFICO BREAK EVEN
-// Barre colorate (verde/rosso vs soglia) + linea contratti + linea BE
+// BARRE BREAK EVEN
 // ============================================================
-function disegnaGrafico(labels, incassiMensili, contrattiMensili, beValue) {
-  const canvas = document.getElementById('be-chart')
-  if (!canvas || typeof Chart === 'undefined') return
+function renderBarreBreakEven(soglia, mediaIncassi, mediaContratti, mesiInc, mesiCont) {
+  const beEmpty       = document.getElementById('be-empty')
+  const cardIncassi   = document.getElementById('be-card-incassi')
+  const cardContratti = document.getElementById('be-card-contratti')
 
-  if (beChart) { beChart.destroy(); beChart = null }
-
-  // Colora ogni barra in base al confronto con il break even
-  const coloriIncassi = incassiMensili.map(v =>
-    v >= beValue && beValue > 0
-      ? 'rgba(16,185,129,0.82)'   // verde = sopra BE
-      : v > 0
-      ? 'rgba(248,113,113,0.82)'  // rosso = sotto BE (ma con dati)
-      : 'rgba(220,220,220,0.4)'   // grigio = nessun dato
-  )
-
-  const coloriIncassiBorder = incassiMensili.map(v =>
-    v >= beValue && beValue > 0 ? 'rgba(16,185,129,1)' : v > 0 ? 'rgba(248,113,113,1)' : 'rgba(200,200,200,0.6)'
-  )
-
-  // Linea break even: valore costante per tutti i mesi
-  const lineaBE = labels.map(() => beValue)
-
-  const ctx = canvas.getContext('2d')
-  beChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        {
-          // Barre: incassi mensili (verdi/rosse)
-          label: 'Incassi mensili',
-          type: 'bar',
-          data: incassiMensili,
-          backgroundColor: coloriIncassi,
-          borderColor: coloriIncassiBorder,
-          borderWidth: 1.5,
-          borderRadius: 4,
-          order: 2,
-        },
-        {
-          // Linea: valore contratti firmati per mese
-          label: 'Contratti firmati',
-          type: 'line',
-          data: contrattiMensili,
-          borderColor: 'var(--secondary)',
-          backgroundColor: 'rgba(15,80,123,0.08)',
-          borderWidth: 2.5,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          pointBackgroundColor: 'var(--secondary)',
-          fill: false,
-          tension: 0.3,
-          order: 1,
-        },
-        {
-          // Linea tratteggiata: soglia break even
-          label: `Break Even (${formatEuro(beValue)}/mese)`,
-          type: 'line',
-          data: lineaBE,
-          borderColor: 'rgba(230,22,92,0.7)',
-          borderWidth: 2,
-          borderDash: [6, 4],
-          pointRadius: 0,
-          fill: false,
-          tension: 0,
-          order: 0,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },  // usiamo la legenda HTML custom
-        tooltip: {
-          backgroundColor: '#1b3050',
-          titleFont: { family: 'Montserrat', size: 11, weight: '700' },
-          bodyFont:  { family: 'Montserrat', size: 11 },
-          callbacks: {
-            label: ctx => {
-              const val = ctx.raw
-              if (val === null || val === undefined) return null
-              return ` ${ctx.dataset.label}: ${formatEuro(val)}`
-            },
-            afterBody: (items) => {
-              // Mostra se il mese è sopra o sotto il break even
-              const incasso = items.find(i => i.datasetIndex === 0)?.raw || 0
-              if (beValue > 0 && incasso > 0) {
-                const diff = incasso - beValue
-                return diff >= 0
-                  ? [`  ✓ +${formatEuro(diff)} sopra il BE`]
-                  : [`  ✗ ${formatEuro(diff)} sotto il BE`]
-              }
-              return []
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { font: { family: 'Montserrat', size: 10 }, color: '#8fa3b8' }
-        },
-        y: {
-          beginAtZero: true,
-          grid: { color: 'rgba(0,0,0,0.04)' },
-          ticks: {
-            font: { family: 'Montserrat', size: 10 },
-            color: '#8fa3b8',
-            callback: v => v >= 1000 ? `€${(v/1000).toFixed(0)}k` : `€${v}`
-          }
-        }
-      }
-    }
-  })
-}
-
-
-// ============================================================
-// KPI COSTI
-// ============================================================
-function aggiornaKPI() {
-  const attivi = tuttICosti.filter(c => c.attivo !== false && c.tipo === 'fisso')
-  const tutti  = tuttICosti.filter(c => c.tipo === 'fisso')
-
-  const fissiMensili = attivi.reduce((s, c) => s + toMensile(c.importo || 0, c.periodicita), 0)
-  const annuali      = fissiMensili * 12
-
-  const el = id => document.getElementById(id)
-  if (el('kpi-fissi'))       el('kpi-fissi').textContent       = formatEuro(fissiMensili)
-  if (el('kpi-fissi-sub'))   el('kpi-fissi-sub').textContent   = `${attivi.length} voci attive`
-  if (el('kpi-annuale'))     el('kpi-annuale').textContent     = formatEuro(annuali)
-  if (el('kpi-count'))       el('kpi-count').textContent       = attivi.length
-  if (el('kpi-count-sub'))   el('kpi-count-sub').textContent   = `di ${tutti.length} totali`
-}
-
-
-// ============================================================
-// TABELLA COSTI FISSI
-// ============================================================
-function renderTabella() {
-  const wrap = document.getElementById('table-costi-wrap')
-  if (!wrap) return
-
-  const dati = tuttICosti.filter(c => c.tipo === 'fisso')
-
-  if (dati.length === 0) {
-    wrap.innerHTML = `
-      <div class="empty-state">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
-        <p>Nessun costo fisso registrato.</p>
-        <p style="margin-top:6px;font-size:11px;">Clicca "Aggiungi costo" per iniziare.</p>
-      </div>`
+  if (soglia === 0 && mediaIncassi === 0 && mediaContratti === 0) {
+    if (beEmpty)       beEmpty.style.display       = 'block'
+    if (cardIncassi)   cardIncassi.style.display   = 'none'
+    if (cardContratti) cardContratti.style.display = 'none'
     return
   }
 
-  const righe = dati.map(c => {
-    const mensile  = toMensile(c.importo || 0, c.periodicita)
-    const catClass = classCategoria(c.categoria)
-    const inattivo = c.attivo === false ? 'costo-inattivo' : ''
-    const badge    = c.attivo !== false
-      ? '<span class="badge badge-green">Attivo</span>'
-      : '<span class="badge badge-gray">Inattivo</span>'
+  if (beEmpty) beEmpty.style.display = 'none'
 
-    return `<tr class="${inattivo}">
-      <td style="font-weight:600;color:var(--text0);">${c.descrizione || '—'}</td>
-      <td><span class="badge ${catClass}">${c.categoria || '—'}</span></td>
-      <td style="text-transform:capitalize;font-size:12px;">${c.periodicita || '—'}</td>
-      <td class="text-right" style="font-weight:700;color:var(--text0);font-family:monospace;">${formatEuro(mensile)}</td>
-      <td>${badge}</td>
-      <td class="text-right">
-        <button class="btn-icon btn btn-sm" title="Modifica" onclick="window.__costiModule.openEdit('${c.id}')">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-        <button class="btn-icon btn btn-sm" title="Elimina" style="color:var(--red);border-color:rgba(248,113,113,.25);" onclick="window.__costiModule.deleteCosto('${c.id}')">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-        </button>
-      </td>
-    </tr>`
-  }).join('')
+  // ── Barra 1: Incassi registrati ─────────────────────────
+  if (cardIncassi) cardIncassi.style.display = 'block'
 
-  wrap.innerHTML = `<table>
-    <thead>
-      <tr>
-        <th>Descrizione</th>
-        <th>Categoria</th>
-        <th>Periodicità</th>
-        <th class="text-right">€/mese</th>
-        <th>Stato</th>
-        <th class="text-right">Azioni</th>
-      </tr>
-    </thead>
-    <tbody>${righe}</tbody>
-  </table>`
-}
+  const pct1     = soglia > 0 ? Math.min((mediaIncassi / soglia) * 100, 100) : 100
+  const pctReal1 = soglia > 0 ? ((mediaIncassi / soglia) * 100).toFixed(2)    : 0
+  const sopra1   = mediaIncassi >= soglia && soglia > 0
 
+  const fill1 = document.getElementById('be-bar1-fill')
+  if (fill1) { fill1.style.width = `${pct1}%`; fill1.classList.toggle('sotto', !sopra1) }
 
-// ============================================================
-// MODAL — APRI NUOVO
-// ============================================================
-function openNew() {
-  document.getElementById('costo-id').value          = ''
-  document.getElementById('costo-descrizione').value = ''
-  document.getElementById('costo-importo').value     = ''
-  document.getElementById('costo-periodicita').value = 'mensile'
-  document.getElementById('costo-categoria').value   = ''
-  document.getElementById('costo-attivo').checked    = true
-  document.getElementById('costo-preview').style.display = 'none'
-  document.getElementById('modal-costo-title').textContent = 'Nuovo costo fisso'
-  document.getElementById('modal-costo').classList.add('open')
-}
+  const s1 = document.getElementById('be-bar1-soglia')
+  if (s1) s1.textContent = `Break-Even: ${formatEuro(soglia)}`
 
-// ============================================================
-// MODAL — APRI MODIFICA
-// ============================================================
-function openEdit(id) {
-  const c = tuttICosti.find(x => x.id === id)
-  if (!c) return
-
-  document.getElementById('costo-id').value          = c.id
-  document.getElementById('costo-descrizione').value = c.descrizione || ''
-  document.getElementById('costo-importo').value     = c.importo ?? ''
-  document.getElementById('costo-periodicita').value = c.periodicita || 'mensile'
-  document.getElementById('costo-categoria').value   = c.categoria  || ''
-  document.getElementById('costo-attivo').checked    = c.attivo !== false
-  aggiornaPreviewMensile()
-  document.getElementById('modal-costo-title').textContent = 'Modifica costo'
-  document.getElementById('modal-costo').classList.add('open')
-}
-
-// ============================================================
-// MODAL — CHIUDI
-// ============================================================
-function closeModal() {
-  document.getElementById('modal-costo').classList.remove('open')
-}
-
-// ============================================================
-// PREVIEW MENSILE
-// ============================================================
-function aggiornaPreviewMensile() {
-  const importo     = parseFloat(document.getElementById('costo-importo')?.value) || 0
-  const periodicita = document.getElementById('costo-periodicita')?.value
-  const mensile     = toMensile(importo, periodicita)
-  const preview     = document.getElementById('costo-preview')
-  const previewVal  = document.getElementById('costo-preview-val')
-
-  if (importo > 0) {
-    if (preview) preview.style.display = 'block'
-    if (previewVal) previewVal.textContent = `${formatEuro(mensile)} / mese`
-  } else {
-    if (preview) preview.style.display = 'none'
-  }
-}
-
-
-// ============================================================
-// SALVA COSTO
-// ============================================================
-async function saveCosto() {
-  const id          = document.getElementById('costo-id').value
-  const descrizione = document.getElementById('costo-descrizione').value.trim()
-  const importo     = parseFloat(document.getElementById('costo-importo').value)
-  const periodicita = document.getElementById('costo-periodicita').value
-  const categoria   = document.getElementById('costo-categoria').value.trim()
-  const attivo      = document.getElementById('costo-attivo').checked
-
-  if (!descrizione) { toast('Inserisci una descrizione', 'error'); return }
-  if (!importo || importo <= 0) { toast('Importo non valido', 'error'); return }
-  if (!categoria) { toast('Inserisci una categoria', 'error'); return }
-
-  const dati = { descrizione, importo, periodicita, tipo: 'fisso', categoria, attivo }
-
-  try {
-    if (id) {
-      await collections.costi().doc(id).update(dati)
-      toast('Costo aggiornato', 'success')
+  const t1 = document.getElementById('be-bar1-text')
+  if (t1) {
+    if (soglia === 0) {
+      t1.innerHTML = '<span style="color:var(--text2)">Inserisci i costi fissi per calcolare il break even</span>'
     } else {
-      dati.createdAt = FieldValue.serverTimestamp()
-      await collections.costi().add(dati)
-      toast('Costo aggiunto', 'success')
+      const m = `media su ${mesiInc} mese${mesiInc !== 1 ? 'i' : ''}`
+      t1.innerHTML = sopra1
+        ? `<span style="color:var(--green)">${pctReal1}% del break even — ${formatEuro(mediaIncassi)} / mese (${m}) — ✓ Coperti!</span>`
+        : `<span style="color:var(--red)">${pctReal1}% del break even — ${formatEuro(mediaIncassi)} / mese (${m}) — mancano ${formatEuro(soglia - mediaIncassi)}</span>`
     }
-
-    closeModal()
-    await caricaCosti()
-    aggiornaKPI()
-    renderTabella()
-    await calcolaBreakEven()
-
-  } catch (err) {
-    console.error('Errore salvataggio costo:', err)
-    toast('Errore nel salvataggio', 'error')
   }
-}
 
+  // ── Barra 2: Contratti firmati ──────────────────────────
+  if (cardContratti) cardContratti.style.display = 'block'
 
-// ============================================================
-// ELIMINA COSTO
-// ============================================================
-async function deleteCosto(id) {
-  const c = tuttICosti.find(x => x.id === id)
-  if (!confirmDelete(`Eliminare "${c?.descrizione || 'questo costo'}"?`)) return
+  const pct2     = soglia > 0 ? Math.min((mediaContratti / soglia) * 100, 100) : 100
+  const pctReal2 = soglia > 0 ? ((mediaContratti / soglia) * 100).toFixed(2)    : 0
+  const sopra2   = mediaContratti >= soglia && soglia > 0
 
-  try {
-    await collections.costi().doc(id).delete()
-    toast('Costo eliminato', 'success')
-    await caricaCosti()
-    aggiornaKPI()
-    renderTabella()
-    await calcolaBreakEven()
-  } catch (err) {
-    console.error('Errore eliminazione:', err)
-    toast("Errore nell'eliminazione", 'error')
+  const fill2 = document.getElementById('be-bar2-fill')
+  if (fill2) { fill2.style.width = `${pct2}%`; fill2.classList.toggle('sotto', !sopra2) }
+
+  const s2 = document.getElementById('be-bar2-soglia')
+  if (s2) s2.textContent = `Break-Even: ${formatEuro(soglia)}`
+
+  const t2 = document.getElementById('be-bar2-text')
+  if (t2) {
+    if (soglia === 0) {
+      t2.innerHTML = '<span style="color:var(--text2)">Inserisci i costi fissi per calcolare il break even</span>'
+    } else {
+      const m = `media su ${mesiCont} mese${mesiCont !== 1 ? 'i' : ''}`
+      t2.innerHTML = sopra2
+        ? `<span style="color:var(--secondary)">${pctReal2}% del break even — ${formatEuro(mediaContratti)} / mese (${m}) — ✓ In utile!</span>`
+        : `<span style="color:var(--red)">${pctReal2}% del break even — ${formatEuro(mediaContratti)} / mese (${m}) — mancano ${formatEuro(soglia - mediaContratti)}</span>`
+    }
   }
-}
-
-
-// ============================================================
-// CARICA CHART.JS DA CDN
-// ============================================================
-function caricaChartJS() {
-  return new Promise(resolve => {
-    if (typeof Chart !== 'undefined') { resolve(); return }
-    const s = document.createElement('script')
-    s.src   = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js'
-    s.onload  = resolve
-    s.onerror = () => { console.error('Chart.js non caricato'); resolve() }
-    document.head.appendChild(s)
-  })
 }
