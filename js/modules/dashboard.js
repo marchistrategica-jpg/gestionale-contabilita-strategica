@@ -26,6 +26,12 @@ let graficoMensile = null
 // ============================================================
 export async function init() {
 
+  // Distruggi grafico precedente se esiste (evita duplicati su re-navigazione)
+  if (graficoMensile) {
+    try { graficoMensile.destroy() } catch(e) {}
+    graficoMensile = null
+  }
+
   // Sotto-titolo KPI incassi con nome mese corrente
   const elSub = document.getElementById('kpi-incassi-sub')
   if (elSub) elSub.textContent = _nomeMeseCorrente()
@@ -34,12 +40,13 @@ export async function init() {
   if (elRateSub) elRateSub.textContent = `Rate in attesa — ${_nomeMeseCorrente()}`
 
   try {
-    // Legge tutte le collezioni in parallelo
+    // Legge tutte le collezioni in parallelo (cache:false forza dati freschi)
+    const opts = { source: 'server' }
     const [snapMov, snapContratti, snapConti, snapRate] = await Promise.all([
-      collections.movimenti().orderBy('data', 'desc').get(),
-      collections.contratti().get(),
-      collections.conti().get(),
-      collections.rate().get(),
+      collections.movimenti().orderBy('data', 'desc').get(opts),
+      collections.contratti().get(opts),
+      collections.conti().get(opts),
+      collections.rate().get(opts),
     ])
 
     const movimenti  = snapMov.docs.map(d => ({ id: d.id, ...d.data() }))
