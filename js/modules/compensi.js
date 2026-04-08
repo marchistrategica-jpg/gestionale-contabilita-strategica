@@ -452,16 +452,49 @@ async function deleteCompenso(id) {
 
 async function pagaCompenso(id) {
   try {
-    const oggi = new Date().toISOString().split('T')[0]
+    const c   = compensi.find(x => x.id === id)
+    if (!c) return
+
+    const oggi    = new Date().toISOString().split('T')[0]
+    const oggiTs  = toTimestamp(oggi)
+
+    // 1. Aggiorna compenso
     await collections.compensi().doc(id).update({
       stato:          'pagata',
-      data_pagamento: toTimestamp(oggi)
+      data_pagamento: oggiTs
     })
-    toast('Compenso segnato come pagato', 'success')
+
+    // 2. Crea movimento automatico in /movimenti (pagamento in uscita)
+    //    Solo se non esiste già un movimento collegato a questo compenso
+    const movimentoDati = {
+      tipo:         'pagamento',
+      importo:      c.importo || 0,
+      data:         oggiTs,
+      descrizione:  `Compenso socio — ${c.socio_nome || ''}`,
+      categoria:    'Compenso socio',
+      note:         c.periodo ? `Periodo: ${c.periodo}` : null,
+      conto:        null,
+      iva_rate:     0,
+      iva_importo:  0,
+      compenso_ref: id,   // collegamento per evitare duplicati
+      createdAt:    FieldValue.serverTimestamp()
+    }
+
+    const esistente = await collections.movimenti()
+      .where('compenso_ref', '==', id)
+      .limit(1)
+      .get()
+
+    if (esistente.empty) {
+      await collections.movimenti().add(movimentoDati)
+    }
+
+    toast('Compenso pagato ✓ — movimento registrato in Incassi', 'success')
     await caricaDati()
     renderSociCards()
     renderKPI()
     renderTabella()
+
   } catch (err) {
     console.error('Errore pagamento:', err)
     toast('Errore nell\'aggiornamento', 'error')
