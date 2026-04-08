@@ -465,8 +465,7 @@ async function pagaCompenso(id) {
     })
 
     // 2. Crea movimento automatico in /movimenti (pagamento in uscita)
-    //    Solo se non esiste già un movimento collegato a questo compenso
-    const movimentoDati = {
+    await collections.movimenti().add({
       tipo:         'pagamento',
       importo:      c.importo || 0,
       data:         oggiTs,
@@ -476,18 +475,9 @@ async function pagaCompenso(id) {
       conto:        null,
       iva_rate:     0,
       iva_importo:  0,
-      compenso_ref: id,   // collegamento per evitare duplicati
+      compenso_ref: id,
       createdAt:    FieldValue.serverTimestamp()
-    }
-
-    const esistente = await collections.movimenti()
-      .where('compenso_ref', '==', id)
-      .limit(1)
-      .get()
-
-    if (esistente.empty) {
-      await collections.movimenti().add(movimentoDati)
-    }
+    })
 
     toast('Compenso pagato ✓ — movimento registrato in Incassi', 'success')
     await caricaDati()
