@@ -94,13 +94,19 @@ async function calcolaBreakEven() {
     const seimesiFA = new Date()
     seimesiFA.setMonth(seimesiFA.getMonth() - 6)
 
-    // Query Firestore: incassi degli ultimi 6 mesi
+    // Query Firestore: solo per tipo, il filtro data lo facciamo lato client
+    // (evita di richiedere un indice composito su Firestore)
     const snap = await collections.movimenti()
       .where('tipo', '==', 'incasso')
-      .where('data', '>=', toTimestamp(seimesiFA.toISOString().split('T')[0]))
       .get()
 
-    const incassi = snap.docs.map(d => d.data())
+    // Filtra lato client: solo i movimenti degli ultimi 6 mesi
+    const incassi = snap.docs
+      .map(d => d.data())
+      .filter(m => {
+        const data = m.data?.toDate ? m.data.toDate() : new Date(m.data)
+        return data >= seimesiFA
+      })
 
     // Raggruppa per mese per calcolare la media mensile reale
     const perMese = {}
