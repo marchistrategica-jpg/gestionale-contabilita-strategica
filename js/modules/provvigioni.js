@@ -20,6 +20,7 @@ import {
 
 let tutteProvvigioni = []   // tutti i documenti Firestore
 let tuttiContratti   = []   // usati per la select del form
+let tuttiConti       = []   // conti correnti
 let filtroStato      = 'tutte'
 let filtroAnno       = new Date().getFullYear()
 let testoCerca       = ''
@@ -28,15 +29,30 @@ let testoCerca       = ''
 
 export async function init() {
   try {
-    // Carica provvigioni e contratti in parallelo
-    const [snapProv, snapCont] = await Promise.all([
+    // Carica provvigioni, contratti e conti in parallelo
+    const [snapProv, snapCont, snapConti] = await Promise.all([
       collections.provvigioni().orderBy('data', 'desc').get(),
-      collections.contratti().orderBy('cliente').get()
+      collections.contratti().orderBy('cliente').get(),
+      collections.conti().get()
     ])
 
     // Mappa documenti Firestore in oggetti JS
     tutteProvvigioni = snapProv.docs.map(d => ({ id: d.id, ...d.data() }))
     tuttiContratti   = snapCont.docs.map(d => ({ id: d.id, ...d.data() }))
+    tuttiConti       = snapConti.docs.map(d => ({ id: d.id, ...d.data() }))
+    tuttiConti.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
+
+    // Popola select conto nel form
+    const selConto = document.getElementById('fp-conto')
+    if (selConto) {
+      selConto.innerHTML = '<option value="">— Seleziona conto —</option>'
+      tuttiConti.forEach(ct => {
+        const opt = document.createElement('option')
+        opt.value = ct.id
+        opt.textContent = `${ct.nome}${ct.banca ? ' — ' + ct.banca : ''}`
+        selConto.appendChild(opt)
+      })
+    }
 
     // Popola selettore anno in base ai dati presenti
     popolaSelectAnno()
@@ -347,6 +363,7 @@ function apriModalNuova() {
   // Reset form
   document.getElementById('form-prov').reset()
   document.getElementById('fp-id').value = ''
+  document.getElementById('fp-conto').value = ''
   document.getElementById('modal-prov-title').textContent = 'Nuova provvigione'
   document.getElementById('fp-data').value = oggi()
   document.getElementById('fp-contratto-valore').style.display = 'none'
@@ -370,6 +387,7 @@ function apriModalModifica(id) {
   document.getElementById('fp-data').value   = toInputDate(p.data)
   document.getElementById('fp-stato').value  = p.stato    || 'da_pagare'
   document.getElementById('fp-data-pag').value = toInputDate(p.data_pagamento)
+  document.getElementById('fp-conto').value = p.conto_pagamento || ''
 
   // Seleziona il contratto collegato (se presente)
   const selCont = document.getElementById('fp-contratto')
@@ -395,6 +413,8 @@ async function salvaProvvigione() {
   if (!data) { toast('Inserisci la data di maturazione', 'error'); return }
 
   // Costruisce il documento da salvare
+  const contoId  = document.getElementById('fp-conto')?.value || null
+  const contoObj = tuttiConti.find(ct => ct.id === contoId)
   const doc = {
     agente,
     cliente:       document.getElementById('fp-cliente').value.trim(),
@@ -404,6 +424,8 @@ async function salvaProvvigione() {
     importo,
     stato,
     note:          document.getElementById('fp-note').value.trim(),
+    conto_pagamento:      contoId || null,
+    conto_pagamento_nome: contoObj?.nome || null,
   }
 
   // Aggiunge data_pagamento se stata = pagata
@@ -478,7 +500,8 @@ async function segnaComePageta(id) {
       descrizione:     `Provvigione — ${p.agente || ''}`,
       categoria:       'Provvigione',
       note:            p.cliente ? `Cliente: ${p.cliente}` : null,
-      conto:           null,
+      conto:           p.conto_pagamento || null,
+      conto_nome:      p.conto_pagamento_nome || null,
       iva_rate:        0,
       iva_importo:     0,
       contratto_ref:   p.contratto_ref || null,
