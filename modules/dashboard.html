@@ -12,19 +12,31 @@
   }
 </script>
 
-<!-- ── Header dashboard con bottone refresh ─────────────────── -->
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+<!-- ── Header dashboard con selettore mese ──────────────────── -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
   <div>
     <h1 style="font-size:20px;font-weight:800;color:var(--text0);margin-bottom:2px;">Dashboard</h1>
     <p style="font-size:12px;color:var(--text2);font-weight:500;" id="dash-last-update">—</p>
   </div>
-  <button class="btn btn-secondary btn-sm" id="btn-dash-refresh">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-    </svg>
-    Aggiorna
-  </button>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <select class="form-control" id="dash-mese" style="width:auto;padding:6px 10px;font-size:12px;">
+      <option value="1">Gennaio</option><option value="2">Febbraio</option>
+      <option value="3">Marzo</option><option value="4">Aprile</option>
+      <option value="5">Maggio</option><option value="6">Giugno</option>
+      <option value="7">Luglio</option><option value="8">Agosto</option>
+      <option value="9">Settembre</option><option value="10">Ottobre</option>
+      <option value="11">Novembre</option><option value="12">Dicembre</option>
+    </select>
+    <select class="form-control" id="dash-anno" style="width:auto;padding:6px 10px;font-size:12px;">
+    </select>
+    <button class="btn btn-secondary btn-sm" id="btn-dash-refresh">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+      Aggiorna
+    </button>
+  </div>
 </div>
 
 <!-- ── KPI Cards ─────────────────────────────────────────────── -->
@@ -32,9 +44,9 @@
 
   <!-- KPI 1: Valore totale contratti (imponibile + IVA, tutti i contratti correnti) -->
   <div class="kpi-card primary">
-    <div class="kpi-label">Valore contratti</div>
+    <div class="kpi-label">Valore chiusi nel mese</div>
     <div class="kpi-value" id="kpi-valore-contratti">—</div>
-    <div class="kpi-sub" id="kpi-valore-contratti-sub">Totale IVA inclusa</div>
+    <div class="kpi-sub" id="kpi-valore-contratti-sub" style="font-size:10px;">Totale IVA inclusa</div>
   </div>
 
   <!-- KPI 2: Incassi del mese (movimenti tipo incasso, mese corrente) -->
@@ -46,14 +58,14 @@
 
   <!-- KPI 3: Rate programmate questo mese (in attesa, IVA inclusa) -->
   <div class="kpi-card amber">
-    <div class="kpi-label">Incassi programmati</div>
+    <div class="kpi-label">Incassi programmati del mese</div>
     <div class="kpi-value" id="kpi-rate-mese">—</div>
     <div class="kpi-sub" id="kpi-rate-mese-sub">Rate in attesa questo mese</div>
   </div>
 
   <!-- KPI 4: Contratti correnti -->
   <div class="kpi-card secondary">
-    <div class="kpi-label">Contratti attivi</div>
+    <div class="kpi-label">Contratti attivi mese corrente</div>
     <div class="kpi-value" id="kpi-contratti">—</div>
     <div class="kpi-sub">In corso</div>
   </div>
