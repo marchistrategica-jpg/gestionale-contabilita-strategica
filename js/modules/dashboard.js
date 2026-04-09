@@ -20,29 +20,65 @@ import { formatEuro, formatDate, formatDateShort }  from '../../js/utils.js'
 // Riferimento globale al grafico
 let graficoMensile = null
 
+// Mese e anno selezionati
+let _meseAttivo = new Date().getMonth() + 1
+let _annoAttivo = new Date().getFullYear()
+
 
 // ============================================================
 // INIT
 // ============================================================
 export async function init() {
 
-  // Distruggi grafico precedente se esiste (evita duplicati su re-navigazione)
+  // Distruggi grafico precedente se esiste
   if (graficoMensile) {
     try { graficoMensile.destroy() } catch(e) {}
     graficoMensile = null
   }
 
-  // Sotto-titolo KPI incassi con nome mese corrente
-  const elSub = document.getElementById('kpi-incassi-sub')
-  if (elSub) elSub.textContent = _nomeMeseCorrente()
+  // Popola selettore anni
+  const selAnno = document.getElementById('dash-anno')
+  if (selAnno) {
+    selAnno.innerHTML = ''
+    const ac = new Date().getFullYear()
+    for (let a = ac; a >= ac - 3; a--) {
+      const opt = document.createElement('option')
+      opt.value = a; opt.textContent = a
+      selAnno.appendChild(opt)
+    }
+  }
 
-  const elRateSub = document.getElementById('kpi-rate-mese-sub')
-  if (elRateSub) elRateSub.textContent = `Rate in attesa — ${_nomeMeseCorrente()}`
+  // Imposta mese e anno corrente
+  const selMese = document.getElementById('dash-mese')
+  if (selMese) selMese.value = _meseAttivo
+  if (selAnno) selAnno.value = _annoAttivo
+
+  // Listener cambio mese/anno
+  document.getElementById('dash-mese')?.addEventListener('change', e => {
+    _meseAttivo = parseInt(e.target.value)
+    _aggiornaSottoTitoli()
+    _caricaDati()
+  })
+  document.getElementById('dash-anno')?.addEventListener('change', e => {
+    _annoAttivo = parseInt(e.target.value)
+    _aggiornaSottoTitoli()
+    _caricaDati()
+  })
 
   // Bottone refresh
   document.getElementById('btn-dash-refresh')?.addEventListener('click', () => _caricaDati())
 
+  _aggiornaSottoTitoli()
   await _caricaDati()
+}
+
+function _aggiornaSottoTitoli() {
+  const nomeMese = new Date(_annoAttivo, _meseAttivo - 1, 1)
+    .toLocaleString('it-IT', { month: 'long', year: 'numeric' })
+  const elSub = document.getElementById('kpi-incassi-sub')
+  if (elSub) elSub.textContent = nomeMese
+  const elRateSub = document.getElementById('kpi-rate-mese-sub')
+  if (elRateSub) elRateSub.textContent = nomeMese
 }
 
 async function _caricaDati() {
@@ -99,23 +135,22 @@ async function _caricaDati() {
 // ============================================================
 function _popolaKpi(movimenti, contratti, conti, rate) {
 
-  const oggi         = new Date()
-  const annoCorrente = oggi.getFullYear()
-  const meseCorrente = oggi.getMonth()
+  // Usa mese e anno dal selettore dashboard
+  const meseCorrente = _meseAttivo - 1  // 0-based
+  const annoCorrente = _annoAttivo
 
-  // ── KPI 1: Valore contratti (tutti tranne conclusi) ──────
-  // Valore totale: include retrocompatibilità con campo 'valore' (vecchi contratti)
-  const valoreContratti = contratti
-    .filter(c => c.stato !== 'concluso')
+  // ── KPI 1: Valore contratti chiusi nel mese selezionato ──
+  const contrattiMese = contratti.filter(c => {
+    const d = c.data_inizio?.toDate ? c.data_inizio.toDate() : new Date(c.data_inizio)
+    return !isNaN(d) && d.getFullYear() === annoCorrente && d.getMonth() === meseCorrente
+  })
+  const valoreChiusiMese = contrattiMese
     .reduce((acc, c) => acc + (c.importo_totale || c.valore || 0), 0)
 
-  // Conta contratti attivi: include sia il nuovo 'corrente' sia il vecchio 'attivo' (retrocompatibilità)
-  const nCorrente = contratti.filter(c => c.stato !== 'concluso' && c.stato !== 'sospeso').length
+  _setKpi('kpi-valore-contratti', formatEuro(valoreChiusiMese))
+  _setKpi('kpi-valore-contratti-sub', `${contrattiMese.length} contratt${contrattiMese.length === 1 ? 'o' : 'i'} chiusi`)
 
-  _setKpi('kpi-valore-contratti', formatEuro(valoreContratti))
-  _setKpi('kpi-valore-contratti-sub', `${contratti.filter(c => c.stato !== 'concluso').length} contratti in corso`)
-
-  // ── KPI 2: Incassi del mese (da movimenti) ──────────────
+  // ── KPI 2: Incassi del mese selezionato ─────────────────
   const incassiMese = movimenti
     .filter(m => m.tipo === 'incasso'
               && _annoOf(m.data) === annoCorrente
@@ -124,7 +159,7 @@ function _popolaKpi(movimenti, contratti, conti, rate) {
 
   _setKpi('kpi-incassi', formatEuro(incassiMese))
 
-  // ── KPI 3: Rate programmate questo mese (in attesa) ─────
+  // ── KPI 3: Rate in attesa nel mese selezionato ───────────
   const rateMese = rate
     .filter(r => r.stato === 'attesa'
               && _annoOf(r.data_prevista) === annoCorrente
@@ -134,8 +169,9 @@ function _popolaKpi(movimenti, contratti, conti, rate) {
   _setKpi('kpi-rate-mese', formatEuro(totRateMese))
   _setKpi('kpi-rate-mese-sub', `${rateMese.length} rata${rateMese.length !== 1 ? 'e' : ''} in attesa`)
 
-  // ── KPI 4: Contratti correnti ───────────────────────────
-  _setKpi('kpi-contratti', String(nCorrente))
+  // ── KPI 4: Contratti attivi (tutti, non dipende dal mese) ─
+  const nAttivi = contratti.filter(c => c.stato !== 'concluso' && c.stato !== 'sospeso').length
+  _setKpi('kpi-contratti', String(nAttivi))
 
   // ── KPI 5+: Saldo per singolo conto ────────────────────
   _renderKpiConti(conti, movimenti)
