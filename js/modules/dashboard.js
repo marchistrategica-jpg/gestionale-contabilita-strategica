@@ -17,8 +17,9 @@
 import { collections }                              from '../../js/firebase-config.js'
 import { formatEuro, formatDate, formatDateShort }  from '../../js/utils.js'
 
-// Riferimento globale al grafico
+// Riferimento globale ai grafici
 let graficoMensile = null
+let graficoTorta   = null
 
 // Mese e anno selezionati
 let _meseAttivo = new Date().getMonth() + 1
@@ -34,6 +35,10 @@ export async function init() {
   if (graficoMensile) {
     try { graficoMensile.destroy() } catch(e) {}
     graficoMensile = null
+  }
+  if (graficoTorta) {
+    try { graficoTorta.destroy() } catch(e) {}
+    graficoTorta = null
   }
 
   // Popola selettore anni
@@ -106,6 +111,7 @@ async function _caricaDati() {
 
     _popolaKpi(movimenti, contratti, conti, rate)
     _popolaGrafico(movimenti)
+    _popolaTorta(movimenti)
     _popolaMovimenti(movimenti)
     _popolaRateScadenza(rate, contratti)
 
@@ -237,115 +243,124 @@ function _calcolaSaldoConto(conto, movimenti) {
 
 
 // ============================================================
-// SEZIONE 2 — Grafico andamento mensile (Chart.js)
+// SEZIONE 2 — Grafico barre: Incassi vs Uscite ultimi 6 mesi
 // ============================================================
-function _popolaGrafico(movimenti) {
-
+function _popolaGrafico (movimenti) {
   const elLoading = document.getElementById('chart-loading')
   const elWrap    = document.getElementById('chart-wrap')
   const elEmpty   = document.getElementById('chart-empty')
 
-  const oggi    = new Date()
-  const labels  = []
-  const incassi = []
-  const uscite  = []
+  const oggi = new Date()
+  const labels = [], incassi = [], uscite = []
 
   for (let i = 5; i >= 0; i--) {
     const ref  = new Date(oggi.getFullYear(), oggi.getMonth() - i, 1)
     const anno = ref.getFullYear()
     const mese = ref.getMonth()
-
     labels.push(ref.toLocaleString('it-IT', { month: 'short', year: '2-digit' }))
-
-    incassi.push(
-      movimenti
-        .filter(m => m.tipo === 'incasso' && _annoOf(m.data) === anno && _meseOf(m.data) === mese)
-        .reduce((acc, m) => acc + (m.importo || 0), 0)
-    )
-
-    uscite.push(
-      movimenti
-        .filter(m => m.tipo === 'pagamento' && _annoOf(m.data) === anno && _meseOf(m.data) === mese)
-        .reduce((acc, m) => acc + (m.importo || 0), 0)
-    )
+    incassi.push(movimenti.filter(m => m.tipo === 'incasso'   && _annoOf(m.data) === anno && _meseOf(m.data) === mese).reduce((a, m) => a + (m.importo || 0), 0))
+    uscite.push( movimenti.filter(m => m.tipo === 'pagamento' && _annoOf(m.data) === anno && _meseOf(m.data) === mese).reduce((a, m) => a + (m.importo || 0), 0))
   }
 
   if (elLoading) elLoading.style.display = 'none'
 
   const hasDati = incassi.some(v => v > 0) || uscite.some(v => v > 0)
-  if (!hasDati) {
-    if (elEmpty) elEmpty.style.display = 'flex'
-    return
-  }
-
+  if (!hasDati) { if (elEmpty) elEmpty.style.display = 'flex'; return }
   if (elWrap) elWrap.style.display = 'block'
 
   _attendiChart(3000).then(() => {
     const canvas = document.getElementById('chart-mensile')
     if (!canvas) return
-
     if (graficoMensile) { graficoMensile.destroy(); graficoMensile = null }
-
     graficoMensile = new window.Chart(canvas, {
       type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Incassi',
-            data: incassi,
-            backgroundColor: 'rgba(16,185,129,0.75)',
-            borderColor: 'rgba(16,185,129,1)',
-            borderWidth: 1.5,
-            borderRadius: 4,
-          },
-          {
-            label: 'Uscite',
-            data: uscite,
-            backgroundColor: 'rgba(248,113,113,0.75)',
-            borderColor: 'rgba(248,113,113,1)',
-            borderWidth: 1.5,
-            borderRadius: 4,
-          }
-        ]
-      },
+      data: { labels, datasets: [
+        { label: 'Incassi', data: incassi, backgroundColor: 'rgba(16,185,129,0.75)', borderColor: 'rgba(16,185,129,1)', borderWidth: 1.5, borderRadius: 5 },
+        { label: 'Uscite',  data: uscite,  backgroundColor: 'rgba(248,113,113,0.75)', borderColor: 'rgba(248,113,113,1)', borderWidth: 1.5, borderRadius: 5 }
+      ]},
       options: {
-        responsive: true,
-        maintainAspectRatio: true,
+        responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: 'top',
-            labels: { font: { family: 'Montserrat', size: 11 }, padding: 14 }
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => ` ${ctx.dataset.label}: ${formatEuro(ctx.raw)}`
-            }
-          }
+          legend: { position: 'top', labels: { font: { family: 'Montserrat', size: 11 }, padding: 14 } },
+          tooltip: { backgroundColor: '#1b3050', callbacks: { label: ctx => ` ${ctx.dataset.label}: ${formatEuro(ctx.raw)}` } }
         },
         scales: {
-          x: {
-            grid: { display: false },
-            ticks: { font: { family: 'Montserrat', size: 11 } }
-          },
-          y: {
-            beginAtZero: true,
-            grid: { color: '#edf1f7' },
-            ticks: {
-              font: { family: 'Montserrat', size: 11 },
-              callback: v => v >= 1000 ? `€${(v/1000).toFixed(0)}k` : `€${v}`
-            }
-          }
+          x: { grid: { display: false }, ticks: { font: { family: 'Montserrat', size: 10 } } },
+          y: { beginAtZero: true, grid: { color: '#edf1f7' }, ticks: { font: { family: 'Montserrat', size: 10 }, callback: v => v >= 1000 ? `€${(v/1000).toFixed(0)}k` : `€${v}` } }
         }
       }
     })
-  }).catch(() => {
-    if (elWrap)  elWrap.style.display  = 'none'
-    if (elEmpty) elEmpty.style.display = 'flex'
-  })
+  }).catch(() => { if (elWrap) elWrap.style.display = 'none'; if (elEmpty) elEmpty.style.display = 'flex' })
 }
 
 
+// ============================================================
+// SEZIONE 2b — Grafico torta: Categorie di spesa (ultimi 6 mesi)
+// ============================================================
+function _popolaTorta (movimenti) {
+  const elLoading = document.getElementById('chart-torta-loading')
+  const elWrap    = document.getElementById('chart-torta-wrap')
+  const elEmpty   = document.getElementById('chart-torta-empty')
+
+  if (elLoading) elLoading.style.display = 'none'
+
+  const oggi     = new Date()
+  const sei_mesi = new Date(oggi.getFullYear(), oggi.getMonth() - 5, 1)
+
+  const perCategoria = {}
+  movimenti
+    .filter(m => {
+      if (m.tipo !== 'pagamento') return false
+      const d = m.data?.toDate ? m.data.toDate() : new Date(m.data)
+      return d >= sei_mesi
+    })
+    .forEach(m => {
+      const cat = m.categoria || 'Altro'
+      perCategoria[cat] = (perCategoria[cat] || 0) + (m.importo || 0)
+    })
+
+  const categorie = Object.entries(perCategoria).sort((a, b) => b[1] - a[1])
+
+  if (!categorie.length) { if (elEmpty) elEmpty.style.display = 'flex'; return }
+  if (elWrap) elWrap.style.display = 'block'
+
+  const palette = [
+    'rgba(15,80,123,0.85)', 'rgba(230,22,92,0.85)', 'rgba(16,185,129,0.85)',
+    'rgba(251,191,36,0.85)', 'rgba(248,113,113,0.85)', 'rgba(139,92,246,0.85)',
+    'rgba(6,182,212,0.85)', 'rgba(249,115,22,0.85)'
+  ]
+
+  _attendiChart(3000).then(() => {
+    const canvas = document.getElementById('chart-torta')
+    if (!canvas) return
+    if (graficoTorta) { graficoTorta.destroy(); graficoTorta = null }
+    graficoTorta = new window.Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: categorie.map(([cat]) => cat),
+        datasets: [{ data: categorie.map(([, v]) => v), backgroundColor: categorie.map((_, i) => palette[i % palette.length]), borderColor: '#fff', borderWidth: 2, hoverOffset: 8 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '58%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              font: { family: 'Montserrat', size: 10, weight: '600' },
+              padding: 10, usePointStyle: true,
+              generateLabels: chart => chart.data.labels.map((label, i) => ({
+                text: `${label}: ${formatEuro(chart.data.datasets[0].data[i])}`,
+                fillStyle: chart.data.datasets[0].backgroundColor[i],
+                strokeStyle: '#fff', pointStyle: 'circle', hidden: false, index: i
+              }))
+            }
+          },
+          tooltip: { backgroundColor: '#1b3050', callbacks: { label: ctx => ` ${ctx.label}: ${formatEuro(ctx.raw)}` } }
+        }
+      }
+    })
+  }).catch(() => { if (elWrap) elWrap.style.display = 'none'; if (elEmpty) elEmpty.style.display = 'flex' })
+}
 // ============================================================
 // SEZIONE 3 — Tabella ultimi 10 movimenti
 // ============================================================
