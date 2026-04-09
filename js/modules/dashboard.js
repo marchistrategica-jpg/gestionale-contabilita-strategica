@@ -268,7 +268,7 @@ function _popolaGrafico (movimenti) {
   if (!hasDati) { if (elEmpty) elEmpty.style.display = 'flex'; return }
   if (elWrap) elWrap.style.display = 'block'
 
-  _attendiChart(3000).then(() => {
+  _attendiChart(4000).then(() => {
     const canvas = document.getElementById('chart-mensile')
     if (!canvas) return
     if (graficoMensile) { graficoMensile.destroy(); graficoMensile = null }
