@@ -456,12 +456,35 @@ async function salvaCompenso() {
         compenso_ref: savedId,
       }
 
-      if (eraGiaPagata && vecchio?.movimento_ref) {
-        // Aggiorna movimento esistente
-        await collections.movimenti().doc(vecchio.movimento_ref).update(movDati)
-        toast('✓ Compenso e movimento in Incassi aggiornati', 'success', 4000)
+      if (eraGiaPagata) {
+        // Cerca il movimento: prima per riferimento diretto, poi per compenso_ref
+        let movId = vecchio?.movimento_ref || null
+
+        if (!movId) {
+          // Cerca il movimento collegato a questo compenso
+          const snap = await collections.movimenti()
+            .where('compenso_ref', '==', savedId)
+            .limit(1).get()
+          if (!snap.empty) movId = snap.docs[0].id
+        }
+
+        if (movId) {
+          // Aggiorna movimento esistente
+          await collections.movimenti().doc(movId).update(movDati)
+          // Salva il riferimento per la prossima volta
+          if (!vecchio?.movimento_ref) {
+            await collections.compensi().doc(savedId).update({ movimento_ref: movId })
+          }
+          toast('✓ Compenso e movimento in Incassi aggiornati', 'success', 4000)
+        } else {
+          // Nessun movimento trovato — creane uno nuovo
+          movDati.createdAt = FieldValue.serverTimestamp()
+          const movRef = await collections.movimenti().add(movDati)
+          await collections.compensi().doc(savedId).update({ movimento_ref: movRef.id })
+          toast('✓ Movimento creato in Incassi & Pagamenti', 'success', 4000)
+        }
       } else if (!eraGiaPagata) {
-        // Crea nuovo movimento e salva il riferimento sul compenso
+        // Nuovo pagamento: crea movimento e salva riferimento
         movDati.createdAt = FieldValue.serverTimestamp()
         const movRef = await collections.movimenti().add(movDati)
         await collections.compensi().doc(savedId).update({ movimento_ref: movRef.id })
