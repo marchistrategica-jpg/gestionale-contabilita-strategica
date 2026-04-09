@@ -410,3 +410,149 @@ function _popolaTorta(movimenti) {
       <div style="flex:1;min-width:0;">${legenda}</div>
     </div>`
 }
+
+
+// ============================================================
+// SEZIONE 3 — Tabella ultimi 10 movimenti
+// ============================================================
+function _popolaMovimenti(movimenti) {
+  const elLoading = document.getElementById('mov-loading')
+  const elWrap    = document.getElementById('mov-wrap')
+  const elEmpty   = document.getElementById('mov-empty')
+  const tbody     = document.getElementById('tb-movimenti')
+
+  if (elLoading) elLoading.style.display = 'none'
+
+  if (!movimenti.length) {
+    if (elEmpty) elEmpty.style.display = 'flex'
+    return
+  }
+
+  const righe = movimenti.slice(0, 10).map(m => {
+    const data  = _toDate(m.data)
+    const badge = m.tipo === 'incasso'
+      ? '<span class="badge badge-green">Incasso</span>'
+      : '<span class="badge badge-red">Pagamento</span>'
+    const impClass = m.tipo === 'incasso' ? 'imp-incasso' : 'imp-pagamento'
+    const segno    = m.tipo === 'incasso' ? '+' : '-'
+
+    return `<tr>
+      <td>${data ? _formatDateShort(data) : '—'}</td>
+      <td>${_esc(m.descrizione || m.categoria || '—')}</td>
+      <td>${badge}</td>
+      <td class="text-right"><span class="${impClass}">${segno}${formatEuro(m.importo || 0)}</span></td>
+    </tr>`
+  }).join('')
+
+  if (tbody) tbody.innerHTML = righe
+  if (elWrap) elWrap.style.display = 'block'
+}
+
+
+// ============================================================
+// SEZIONE 4 — Rate in scadenza (prossimi 60 giorni)
+// ============================================================
+function _popolaRateScadenza(rate, contratti) {
+  const elLoading = document.getElementById('sca-loading')
+  const elWrap    = document.getElementById('sca-wrap')
+  const elEmpty   = document.getElementById('sca-empty')
+  const tbody     = document.getElementById('tb-rate-scadenza')
+
+  if (elLoading) elLoading.style.display = 'none'
+
+  const oggi  = new Date(); oggi.setHours(0, 0, 0, 0)
+  const tra60 = new Date(oggi); tra60.setDate(tra60.getDate() + 60)
+
+  const rateInScadenza = rate
+    .filter(r => {
+      const dp = _toDate(r.data_prevista)
+      return r.stato === 'attesa' && dp && dp <= tra60
+    })
+    .sort((a, b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))
+
+  if (!rateInScadenza.length) {
+    if (elEmpty) elEmpty.style.display = 'flex'
+    return
+  }
+
+  const righe = rateInScadenza.map(r => {
+    const dp     = _toDate(r.data_prevista)
+    const giorni = dp ? Math.ceil((dp - oggi) / 86400000) : null
+
+    let giorniHtml = ''
+    if (giorni !== null) {
+      if (giorni < 0)      giorniHtml = `<span class="giorni-badge rosso">${Math.abs(giorni)}gg fa</span>`
+      else if (giorni === 0) giorniHtml = `<span class="giorni-badge rosso">oggi!</span>`
+      else                  giorniHtml = `<span class="giorni-badge">tra ${giorni}gg</span>`
+    }
+
+    return `<tr>
+      <td style="font-weight:600;">${_esc(r.cliente || '—')}</td>
+      <td style="font-size:11px;color:var(--text2);">${_esc(r.descrizione || 'Rata')}</td>
+      <td>${dp ? _formatDate(dp) : '—'}${giorniHtml}</td>
+      <td class="text-right" style="font-weight:700;color:var(--text0);">${formatEuro(r.importo_totale || 0)}</td>
+    </tr>`
+  }).join('')
+
+  if (tbody) tbody.innerHTML = righe
+  if (elWrap) elWrap.style.display = 'block'
+}
+
+
+// ============================================================
+// UTILITY
+// ============================================================
+
+function _toDate(val) {
+  if (!val) return null
+  if (typeof val.toDate === 'function') return val.toDate()
+  const d = new Date(val)
+  return isNaN(d) ? null : d
+}
+
+function _annoOf(val) {
+  const d = _toDate(val)
+  return d ? d.getFullYear() : -1
+}
+
+function _meseOf(val) {
+  const d = _toDate(val)
+  return d ? d.getMonth() : -1
+}
+
+function _setKpi(id, valore) {
+  const el = document.getElementById(id)
+  if (el) el.textContent = valore
+}
+
+function _nomeMeseCorrente() {
+  return new Date().toLocaleString('it-IT', { month: 'long', year: 'numeric' })
+}
+
+function _esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function _formatDate(d) {
+  if (!d) return '—'
+  return new Intl.DateTimeFormat('it-IT', { day:'2-digit', month:'2-digit', year:'numeric' }).format(d)
+}
+
+function _formatDateShort(d) {
+  if (!d) return '—'
+  return new Intl.DateTimeFormat('it-IT', { day:'2-digit', month:'short', year:'numeric' }).format(d)
+}
+
+function _attendiChart(timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (window.Chart) { resolve(); return }
+    const start = Date.now()
+    const t = setInterval(() => {
+      if (window.Chart) { clearInterval(t); resolve() }
+      else if (Date.now() - start > timeoutMs) { clearInterval(t); reject() }
+    }, 100)
+  })
+}
