@@ -32,14 +32,8 @@ let _annoAttivo = new Date().getFullYear()
 export async function init() {
 
   // Distruggi grafico precedente se esiste
-  if (graficoMensile) {
-    try { graficoMensile.destroy() } catch(e) {}
-    graficoMensile = null
-  }
-  if (graficoTorta) {
-    try { graficoTorta.destroy() } catch(e) {}
-    graficoTorta = null
-  }
+  graficoMensile = null
+  graficoTorta = null
 
   // Popola selettore anni
   const selAnno = document.getElementById('dash-anno')
@@ -243,61 +237,99 @@ function _calcolaSaldoConto(conto, movimenti) {
 
 
 // ============================================================
-// SEZIONE 2 — Grafico barre: Incassi vs Uscite ultimi 6 mesi
+// SEZIONE 2 — Grafico barre SVG: Incassi vs Uscite ultimi 6 mesi
 // ============================================================
-function _popolaGrafico (movimenti) {
+function _popolaGrafico(movimenti) {
   const elLoading = document.getElementById('chart-loading')
   const elWrap    = document.getElementById('chart-wrap')
   const elEmpty   = document.getElementById('chart-empty')
 
+  if (elLoading) elLoading.style.display = 'none'
+
   const oggi = new Date()
-  const labels = [], incassi = [], uscite = []
+  const mesi = []
 
   for (let i = 5; i >= 0; i--) {
     const ref  = new Date(oggi.getFullYear(), oggi.getMonth() - i, 1)
     const anno = ref.getFullYear()
     const mese = ref.getMonth()
-    labels.push(ref.toLocaleString('it-IT', { month: 'short', year: '2-digit' }))
-    incassi.push(movimenti.filter(m => m.tipo === 'incasso'   && _annoOf(m.data) === anno && _meseOf(m.data) === mese).reduce((a, m) => a + (m.importo || 0), 0))
-    uscite.push( movimenti.filter(m => m.tipo === 'pagamento' && _annoOf(m.data) === anno && _meseOf(m.data) === mese).reduce((a, m) => a + (m.importo || 0), 0))
+    const label = ref.toLocaleString('it-IT', { month: 'short' })
+
+    const inc = movimenti
+      .filter(m => m.tipo === 'incasso' && _annoOf(m.data) === anno && _meseOf(m.data) === mese)
+      .reduce((a, m) => a + (m.importo || 0), 0)
+
+    const usc = movimenti
+      .filter(m => m.tipo === 'pagamento' && _annoOf(m.data) === anno && _meseOf(m.data) === mese)
+      .reduce((a, m) => a + (m.importo || 0), 0)
+
+    mesi.push({ label, inc, usc })
   }
 
-  if (elLoading) elLoading.style.display = 'none'
-
-  const hasDati = incassi.some(v => v > 0) || uscite.some(v => v > 0)
-  if (!hasDati) { if (elEmpty) elEmpty.style.display = 'flex'; return }
+  const hasDati = mesi.some(m => m.inc > 0 || m.usc > 0)
+  if (!hasDati) {
+    if (elEmpty) elEmpty.style.display = 'flex'
+    return
+  }
   if (elWrap) elWrap.style.display = 'block'
 
-  _attendiChart(4000).then(() => {
-    const canvas = document.getElementById('chart-mensile')
-    if (!canvas) return
-    if (graficoMensile) { graficoMensile.destroy(); graficoMensile = null }
-    graficoMensile = new window.Chart(canvas, {
-      type: 'bar',
-      data: { labels, datasets: [
-        { label: 'Incassi', data: incassi, backgroundColor: 'rgba(16,185,129,0.75)', borderColor: 'rgba(16,185,129,1)', borderWidth: 1.5, borderRadius: 5 },
-        { label: 'Uscite',  data: uscite,  backgroundColor: 'rgba(248,113,113,0.75)', borderColor: 'rgba(248,113,113,1)', borderWidth: 1.5, borderRadius: 5 }
-      ]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top', labels: { font: { family: 'Montserrat', size: 11 }, padding: 14 } },
-          tooltip: { backgroundColor: '#1b3050', callbacks: { label: ctx => ` ${ctx.dataset.label}: ${formatEuro(ctx.raw)}` } }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { family: 'Montserrat', size: 10 } } },
-          y: { beginAtZero: true, grid: { color: '#edf1f7' }, ticks: { font: { family: 'Montserrat', size: 10 }, callback: v => v >= 1000 ? `€${(v/1000).toFixed(0)}k` : `€${v}` } }
-        }
-      }
-    })
-  }).catch(() => { if (elWrap) elWrap.style.display = 'none'; if (elEmpty) elEmpty.style.display = 'flex' })
+  const maxVal = Math.max(...mesi.map(m => Math.max(m.inc, m.usc)), 1)
+  const W = 560, H = 200, PAD = 40, BAR_W = 28, GAP = 10
+  const colW = (W - PAD) / 6
+
+  let svgBars = ''
+  mesi.forEach((m, i) => {
+    const x = PAD + i * colW + colW / 2
+    const hInc = (m.inc / maxVal) * (H - 30)
+    const hUsc = (m.usc / maxVal) * (H - 30)
+
+    // Barra incassi (verde)
+    svgBars += `<rect x="${x - BAR_W - GAP/2}" y="${H - 20 - hInc}" width="${BAR_W}" height="${hInc}" rx="3" fill="rgba(16,185,129,0.85)"/>`
+    // Barra uscite (rossa)
+    svgBars += `<rect x="${x + GAP/2}" y="${H - 20 - hUsc}" width="${BAR_W}" height="${hUsc}" rx="3" fill="rgba(248,113,113,0.85)"/>`
+    // Label mese
+    svgBars += `<text x="${x}" y="${H}" text-anchor="middle" font-size="10" font-family="Montserrat,sans-serif" fill="#8fa3b8">${m.label}</text>`
+    // Valore incasso sopra barra
+    if (m.inc > 0) svgBars += `<text x="${x - BAR_W/2 - GAP/2}" y="${H - 22 - hInc}" text-anchor="middle" font-size="8" font-family="Montserrat,sans-serif" fill="var(--green)" font-weight="700">${m.inc >= 1000 ? (m.inc/1000).toFixed(0)+'k' : m.inc}</text>`
+    if (m.usc > 0) svgBars += `<text x="${x + BAR_W/2 + GAP/2}" y="${H - 22 - hUsc}" text-anchor="middle" font-size="8" font-family="Montserrat,sans-serif" fill="var(--red)" font-weight="700">${m.usc >= 1000 ? (m.usc/1000).toFixed(0)+'k' : m.usc}</text>`
+  })
+
+  // Linee griglia orizzontali
+  let grid = ''
+  for (let j = 1; j <= 4; j++) {
+    const y = H - 20 - (j / 4) * (H - 30)
+    grid += `<line x1="${PAD}" y1="${y}" x2="${W}" y2="${y}" stroke="#edf1f7" stroke-width="1"/>`
+    const val = (maxVal * j / 4)
+    grid += `<text x="${PAD - 4}" y="${y + 3}" text-anchor="end" font-size="8" font-family="Montserrat,sans-serif" fill="#8fa3b8">€${val >= 1000 ? (val/1000).toFixed(0)+'k' : val.toFixed(0)}</text>`
+  }
+
+  // Legenda
+  const legenda = `
+    <rect x="${W/2 - 70}" y="${H + 10}" width="12" height="8" rx="2" fill="rgba(16,185,129,0.85)"/>
+    <text x="${W/2 - 55}" y="${H + 17}" font-size="10" font-family="Montserrat,sans-serif" fill="#4a6380" font-weight="600">Incassi</text>
+    <rect x="${W/2 + 10}" y="${H + 10}" width="12" height="8" rx="2" fill="rgba(248,113,113,0.85)"/>
+    <text x="${W/2 + 25}" y="${H + 17}" font-size="10" font-family="Montserrat,sans-serif" fill="#4a6380" font-weight="600">Uscite</text>`
+
+  const canvas = document.getElementById('chart-mensile')
+  if (canvas) {
+    canvas.outerHTML = `<div id="chart-mensile" style="width:100%;overflow-x:auto;">
+      <svg viewBox="0 0 ${W} ${H + 30}" style="width:100%;max-width:${W}px;display:block;margin:0 auto;">
+        ${grid}${svgBars}${legenda}
+      </svg>
+    </div>`
+  } else {
+    const wrap = document.getElementById('chart-wrap')
+    if (wrap) wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H + 30}" style="width:100%;max-width:${W}px;display:block;margin:0 auto;">
+      ${grid}${svgBars}${legenda}
+    </svg>`
+  }
 }
 
 
 // ============================================================
-// SEZIONE 2b — Grafico torta: Categorie di spesa (ultimi 6 mesi)
+// SEZIONE 2b — Grafico torta SVG: Categorie di spesa
 // ============================================================
-function _popolaTorta (movimenti) {
+function _popolaTorta(movimenti) {
   const elLoading = document.getElementById('chart-torta-loading')
   const elWrap    = document.getElementById('chart-torta-wrap')
   const elEmpty   = document.getElementById('chart-torta-empty')
@@ -307,7 +339,7 @@ function _popolaTorta (movimenti) {
   const oggi     = new Date()
   const sei_mesi = new Date(oggi.getFullYear(), oggi.getMonth() - 5, 1)
 
-  const perCategoria = {}
+  const perCat = {}
   movimenti
     .filter(m => {
       if (m.tipo !== 'pagamento') return false
@@ -316,50 +348,61 @@ function _popolaTorta (movimenti) {
     })
     .forEach(m => {
       const cat = m.categoria || 'Altro'
-      perCategoria[cat] = (perCategoria[cat] || 0) + (m.importo || 0)
+      perCat[cat] = (perCat[cat] || 0) + (m.importo || 0)
     })
 
-  const categorie = Object.entries(perCategoria).sort((a, b) => b[1] - a[1])
-
-  if (!categorie.length) { if (elEmpty) elEmpty.style.display = 'flex'; return }
+  const voci = Object.entries(perCat).sort((a, b) => b[1] - a[1])
+  if (!voci.length) {
+    if (elEmpty) elEmpty.style.display = 'flex'
+    return
+  }
   if (elWrap) elWrap.style.display = 'block'
 
-  const palette = [
-    'rgba(15,80,123,0.85)', 'rgba(230,22,92,0.85)', 'rgba(16,185,129,0.85)',
-    'rgba(251,191,36,0.85)', 'rgba(248,113,113,0.85)', 'rgba(139,92,246,0.85)',
-    'rgba(6,182,212,0.85)', 'rgba(249,115,22,0.85)'
-  ]
+  const palette = ['#0f507b','#e6165c','#10b981','#fbbf24','#f87171','#8b5cf6','#06b6d4','#f97316']
+  const totale = voci.reduce((s, [, v]) => s + v, 0)
 
-  _attendiChart(3000).then(() => {
-    const canvas = document.getElementById('chart-torta')
-    if (!canvas) return
-    if (graficoTorta) { graficoTorta.destroy(); graficoTorta = null }
-    graficoTorta = new window.Chart(canvas, {
-      type: 'doughnut',
-      data: {
-        labels: categorie.map(([cat]) => cat),
-        datasets: [{ data: categorie.map(([, v]) => v), backgroundColor: categorie.map((_, i) => palette[i % palette.length]), borderColor: '#fff', borderWidth: 2, hoverOffset: 8 }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '58%',
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              font: { family: 'Montserrat', size: 10, weight: '600' },
-              padding: 10, usePointStyle: true,
-              generateLabels: chart => chart.data.labels.map((label, i) => ({
-                text: `${label}: ${formatEuro(chart.data.datasets[0].data[i])}`,
-                fillStyle: chart.data.datasets[0].backgroundColor[i],
-                strokeStyle: '#fff', pointStyle: 'circle', hidden: false, index: i
-              }))
-            }
-          },
-          tooltip: { backgroundColor: '#1b3050', callbacks: { label: ctx => ` ${ctx.label}: ${formatEuro(ctx.raw)}` } }
-        }
-      }
-    })
-  }).catch(() => { if (elWrap) elWrap.style.display = 'none'; if (elEmpty) elEmpty.style.display = 'flex' })
+  // Disegna ciambella SVG
+  const CX = 90, CY = 90, R = 70, r = 40
+  let angolo = -Math.PI / 2
+  let fette = ''
+
+  voci.forEach(([cat, val], i) => {
+    const perc = val / totale
+    const ang  = perc * 2 * Math.PI
+    const x1 = CX + R * Math.cos(angolo)
+    const y1 = CY + R * Math.sin(angolo)
+    const x2 = CX + R * Math.cos(angolo + ang)
+    const y2 = CY + R * Math.sin(angolo + ang)
+    const xi1 = CX + r * Math.cos(angolo)
+    const yi1 = CY + r * Math.sin(angolo)
+    const xi2 = CX + r * Math.cos(angolo + ang)
+    const yi2 = CY + r * Math.sin(angolo + ang)
+    const large = ang > Math.PI ? 1 : 0
+    const col = palette[i % palette.length]
+
+    fette += `<path d="M${xi1} ${yi1} L${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} L${xi2} ${yi2} A${r} ${r} 0 ${large} 0 ${xi1} ${yi1} Z"
+      fill="${col}" stroke="#fff" stroke-width="2" opacity="0.9"/>`
+    angolo += ang
+  })
+
+  // Legenda a destra
+  let legenda = ''
+  voci.slice(0, 6).forEach(([cat, val], i) => {
+    const y = 20 + i * 22
+    const col = palette[i % palette.length]
+    legenda += `<rect x="190" y="${y}" width="10" height="10" rx="2" fill="${col}"/>`
+    legenda += `<text x="204" y="${y + 9}" font-size="10" font-family="Montserrat,sans-serif" fill="#4a6380" font-weight="600">${cat}</text>`
+    legenda += `<text x="204" y="${y + 19}" font-size="9" font-family="Montserrat,sans-serif" fill="#8fa3b8">${formatEuro(val)}</text>`
+  })
+
+  // Testo centrale
+  const centro = `<text x="${CX}" y="${CY - 5}" text-anchor="middle" font-size="9" font-family="Montserrat,sans-serif" fill="#8fa3b8">Totale</text>
+    <text x="${CX}" y="${CY + 10}" text-anchor="middle" font-size="11" font-family="Montserrat,sans-serif" fill="#1b3050" font-weight="800">${formatEuro(totale)}</text>`
+
+  const wrap = document.getElementById('chart-torta-wrap')
+  if (wrap) wrap.innerHTML = `<svg viewBox="0 0 360 190" style="width:100%;display:block;">
+    ${fette}${centro}${legenda}
+  </svg>`
 }
 // ============================================================
 // SEZIONE 3 — Tabella ultimi 10 movimenti
