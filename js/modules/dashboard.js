@@ -327,7 +327,7 @@ function _popolaGrafico(movimenti) {
 
 
 // ============================================================
-// SEZIONE 2b — Barre orizzontali: Categorie di spesa
+// SEZIONE 2b — Grafico torta: Categorie di spesa (HTML/CSS)
 // ============================================================
 function _popolaTorta(movimenti) {
   const elLoading = document.getElementById('chart-torta-loading')
@@ -360,175 +360,53 @@ function _popolaTorta(movimenti) {
 
   const palette = ['#0f507b','#e6165c','#10b981','#fbbf24','#f87171','#8b5cf6','#06b6d4','#f97316']
   const totale  = voci.reduce((s, [, v]) => s + v, 0)
-  const maxVal  = voci[0][1]
 
-  // Barre orizzontali HTML (più semplice e affidabile dell'SVG per le torte)
-  const righe = voci.slice(0, 7).map(([cat, val], i) => {
-    const perc   = Math.round((val / totale) * 100)
-    const width  = Math.round((val / maxVal) * 100)
-    const col    = palette[i % palette.length]
-    return `
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div style="width:10px;height:10px;border-radius:3px;background:${col};flex-shrink:0;"></div>
-            <span style="font-size:11px;font-weight:600;color:var(--text1);">${cat}</span>
-          </div>
-          <div style="font-size:11px;font-weight:700;color:var(--text0);">${formatEuro(val)} <span style="font-weight:400;color:var(--text2);font-size:10px;">(${perc}%)</span></div>
-        </div>
-        <div style="height:8px;background:var(--bg2);border-radius:4px;overflow:hidden;">
-          <div style="height:100%;width:${width}%;background:${col};border-radius:4px;transition:width .5s ease;"></div>
-        </div>
-      </div>`
+  // Costruisce il conic-gradient per la torta
+  let gradientParts = []
+  let angolo = 0
+  voci.forEach(([, val], i) => {
+    const perc = (val / totale) * 100
+    const col  = palette[i % palette.length]
+    gradientParts.push(`${col} ${angolo.toFixed(1)}% ${(angolo + perc).toFixed(1)}%`)
+    angolo += perc
+  })
+  const gradient = `conic-gradient(${gradientParts.join(', ')})`
+
+  // Legenda
+  const legenda = voci.slice(0, 7).map(([cat, val], i) => {
+    const perc = Math.round((val / totale) * 100)
+    const col  = palette[i % palette.length]
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="width:12px;height:12px;border-radius:50%;background:${col};flex-shrink:0;"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cat}</div>
+        <div style="font-size:10px;color:var(--text2);">${formatEuro(val)} · ${perc}%</div>
+      </div>
+    </div>`
   }).join('')
-
-  const totRow = `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;">
-    <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;">Totale uscite</span>
-    <span style="font-size:13px;font-weight:800;color:var(--red);">${formatEuro(totale)}</span>
-  </div>`
 
   const wrap = document.getElementById('chart-torta-wrap')
-  if (wrap) wrap.innerHTML = `<div style="padding:8px 4px;">${righe}${totRow}</div>`
-}
-// ============================================================
-// SEZIONE 3 — Tabella ultimi 10 movimenti
-// ============================================================
-function _popolaMovimenti(movimenti) {
-  const elLoading = document.getElementById('mov-loading')
-  const elWrap    = document.getElementById('mov-wrap')
-  const elEmpty   = document.getElementById('mov-empty')
-  const tbody     = document.getElementById('tb-movimenti')
-
-  if (elLoading) elLoading.style.display = 'none'
-
-  if (!movimenti.length) {
-    if (elEmpty) elEmpty.style.display = 'flex'
-    return
-  }
-
-  const righe = movimenti.slice(0, 10).map(m => {
-    const data  = _toDate(m.data)
-    const badge = m.tipo === 'incasso'
-      ? '<span class="badge badge-green">Incasso</span>'
-      : '<span class="badge badge-red">Pagamento</span>'
-    const impClass = m.tipo === 'incasso' ? 'imp-incasso' : 'imp-pagamento'
-    const segno    = m.tipo === 'incasso' ? '+' : '-'
-
-    return `<tr>
-      <td>${data ? formatDateShort(data) : '—'}</td>
-      <td>${_esc(m.descrizione || m.categoria || '—')}</td>
-      <td>${badge}</td>
-      <td class="text-right"><span class="${impClass}">${segno}${formatEuro(m.importo || 0)}</span></td>
-    </tr>`
-  }).join('')
-
-  if (tbody) tbody.innerHTML = righe
-  if (elWrap) elWrap.style.display = 'block'
-}
-
-
-// ============================================================
-// SEZIONE 4 — Rate in scadenza (prossimi 60 giorni)
-// ============================================================
-function _popolaRateScadenza(rate, contratti) {
-  const elLoading = document.getElementById('sca-loading')
-  const elWrap    = document.getElementById('sca-wrap')
-  const elEmpty   = document.getElementById('sca-empty')
-  const tbody     = document.getElementById('tb-rate-scadenza')
-
-  if (elLoading) elLoading.style.display = 'none'
-
-  const oggi  = new Date(); oggi.setHours(0, 0, 0, 0)
-  const tra60 = new Date(oggi); tra60.setDate(tra60.getDate() + 60)
-
-  // Filtra rate in attesa entro 60 giorni (incluse quelle già scadute)
-  const rateInScadenza = rate
-    .filter(r => {
-      const dp = _toDate(r.data_prevista)
-      return r.stato === 'attesa' && dp && dp <= tra60
-    })
-    .sort((a, b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))
-
-  if (!rateInScadenza.length) {
-    if (elEmpty) elEmpty.style.display = 'flex'
-    return
-  }
-
-  const righe = rateInScadenza.map(r => {
-    const dp     = _toDate(r.data_prevista)
-    const giorni = dp ? Math.ceil((dp - oggi) / 86400000) : null
-
-    let giorniHtml = ''
-    if (giorni !== null) {
-      if (giorni < 0) {
-        giorniHtml = `<span class="giorni-badge rosso">${Math.abs(giorni)}gg fa</span>`
-      } else if (giorni === 0) {
-        giorniHtml = `<span class="giorni-badge rosso">oggi!</span>`
-      } else {
-        giorniHtml = `<span class="giorni-badge">tra ${giorni}gg</span>`
-      }
-    }
-
-    return `<tr>
-      <td style="font-weight:600;">${_esc(r.cliente || '—')}</td>
-      <td style="font-size:11px;color:var(--text2);">${_esc(r.descrizione || 'Rata')}</td>
-      <td>
-        ${dp ? formatDate(dp) : '—'}
-        ${giorniHtml}
-      </td>
-      <td class="text-right" style="font-weight:700;color:var(--text0);">${formatEuro(r.importo_totale || 0)}</td>
-    </tr>`
-  }).join('')
-
-  if (tbody) tbody.innerHTML = righe
-  if (elWrap) elWrap.style.display = 'block'
-}
-
-
-// ============================================================
-// UTILITY
-// ============================================================
-
-function _toDate(val) {
-  if (!val) return null
-  if (typeof val.toDate === 'function') return val.toDate()
-  const d = new Date(val)
-  return isNaN(d) ? null : d
-}
-
-function _annoOf(val) {
-  const d = _toDate(val)
-  return d ? d.getFullYear() : -1
-}
-
-function _meseOf(val) {
-  const d = _toDate(val)
-  return d ? d.getMonth() : -1
-}
-
-function _setKpi(id, valore) {
-  const el = document.getElementById(id)
-  if (el) el.textContent = valore
-}
-
-function _nomeMeseCorrente() {
-  return new Date().toLocaleString('it-IT', { month: 'long', year: 'numeric' })
-}
-
-function _esc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function _attendiChart(timeoutMs) {
-  return new Promise((resolve, reject) => {
-    if (window.Chart) { resolve(); return }
-    const start = Date.now()
-    const t = setInterval(() => {
-      if (window.Chart) { clearInterval(t); resolve() }
-      else if (Date.now() - start > timeoutMs) { clearInterval(t); reject() }
-    }, 100)
-  })
+  if (wrap) wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:20px;padding:12px 16px;">
+      <!-- Torta -->
+      <div style="position:relative;flex-shrink:0;">
+        <div style="
+          width:140px;height:140px;border-radius:50%;
+          background:${gradient};
+          mask:radial-gradient(circle, transparent 45px, black 46px);
+          -webkit-mask:radial-gradient(circle, transparent 45px, black 46px);
+        "></div>
+        <!-- Testo centrale -->
+        <div style="
+          position:absolute;top:50%;left:50%;
+          transform:translate(-50%,-50%);
+          text-align:center;pointer-events:none;
+        ">
+          <div style="font-size:9px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;">Totale</div>
+          <div style="font-size:12px;font-weight:800;color:var(--text0);white-space:nowrap;">${formatEuro(totale)}</div>
+        </div>
+      </div>
+      <!-- Legenda -->
+      <div style="flex:1;min-width:0;">${legenda}</div>
+    </div>`
 }
