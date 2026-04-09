@@ -27,7 +27,7 @@ function classCategoria(cat) {
 // INIT
 // ============================================================
 export async function init() {
-  window.__costiModule = { openNew, openEdit, deleteCosto, saveCosto, closeModal }
+  window.__costiModule = { openNew, openEdit, deleteCosto, saveCosto, closeModal, registraMese }
 
   await Promise.all([ caricaCosti(), calcolaBreakEven() ])
 
