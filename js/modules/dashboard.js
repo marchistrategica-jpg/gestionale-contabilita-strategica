@@ -327,7 +327,7 @@ function _popolaGrafico(movimenti) {
 
 
 // ============================================================
-// SEZIONE 2b — Grafico torta SVG: Categorie di spesa
+// SEZIONE 2b — Barre orizzontali: Categorie di spesa
 // ============================================================
 function _popolaTorta(movimenti) {
   const elLoading = document.getElementById('chart-torta-loading')
@@ -359,50 +359,36 @@ function _popolaTorta(movimenti) {
   if (elWrap) elWrap.style.display = 'block'
 
   const palette = ['#0f507b','#e6165c','#10b981','#fbbf24','#f87171','#8b5cf6','#06b6d4','#f97316']
-  const totale = voci.reduce((s, [, v]) => s + v, 0)
+  const totale  = voci.reduce((s, [, v]) => s + v, 0)
+  const maxVal  = voci[0][1]
 
-  // Disegna ciambella SVG
-  const CX = 90, CY = 90, R = 70, r = 40
-  let angolo = -Math.PI / 2
-  let fette = ''
+  // Barre orizzontali HTML (più semplice e affidabile dell'SVG per le torte)
+  const righe = voci.slice(0, 7).map(([cat, val], i) => {
+    const perc   = Math.round((val / totale) * 100)
+    const width  = Math.round((val / maxVal) * 100)
+    const col    = palette[i % palette.length]
+    return `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:10px;height:10px;border-radius:3px;background:${col};flex-shrink:0;"></div>
+            <span style="font-size:11px;font-weight:600;color:var(--text1);">${cat}</span>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:var(--text0);">${formatEuro(val)} <span style="font-weight:400;color:var(--text2);font-size:10px;">(${perc}%)</span></div>
+        </div>
+        <div style="height:8px;background:var(--bg2);border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${width}%;background:${col};border-radius:4px;transition:width .5s ease;"></div>
+        </div>
+      </div>`
+  }).join('')
 
-  voci.forEach(([cat, val], i) => {
-    const perc = val / totale
-    const ang  = perc * 2 * Math.PI
-    const x1 = CX + R * Math.cos(angolo)
-    const y1 = CY + R * Math.sin(angolo)
-    const x2 = CX + R * Math.cos(angolo + ang)
-    const y2 = CY + R * Math.sin(angolo + ang)
-    const xi1 = CX + r * Math.cos(angolo)
-    const yi1 = CY + r * Math.sin(angolo)
-    const xi2 = CX + r * Math.cos(angolo + ang)
-    const yi2 = CY + r * Math.sin(angolo + ang)
-    const large = ang > Math.PI ? 1 : 0
-    const col = palette[i % palette.length]
-
-    fette += `<path d="M${xi1} ${yi1} L${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} L${xi2} ${yi2} A${r} ${r} 0 ${large} 0 ${xi1} ${yi1} Z"
-      fill="${col}" stroke="#fff" stroke-width="2" opacity="0.9"/>`
-    angolo += ang
-  })
-
-  // Legenda a destra
-  let legenda = ''
-  voci.slice(0, 6).forEach(([cat, val], i) => {
-    const y = 20 + i * 22
-    const col = palette[i % palette.length]
-    legenda += `<rect x="190" y="${y}" width="10" height="10" rx="2" fill="${col}"/>`
-    legenda += `<text x="204" y="${y + 9}" font-size="10" font-family="Montserrat,sans-serif" fill="#4a6380" font-weight="600">${cat}</text>`
-    legenda += `<text x="204" y="${y + 19}" font-size="9" font-family="Montserrat,sans-serif" fill="#8fa3b8">${formatEuro(val)}</text>`
-  })
-
-  // Testo centrale
-  const centro = `<text x="${CX}" y="${CY - 5}" text-anchor="middle" font-size="9" font-family="Montserrat,sans-serif" fill="#8fa3b8">Totale</text>
-    <text x="${CX}" y="${CY + 10}" text-anchor="middle" font-size="11" font-family="Montserrat,sans-serif" fill="#1b3050" font-weight="800">${formatEuro(totale)}</text>`
+  const totRow = `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;">
+    <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;">Totale uscite</span>
+    <span style="font-size:13px;font-weight:800;color:var(--red);">${formatEuro(totale)}</span>
+  </div>`
 
   const wrap = document.getElementById('chart-torta-wrap')
-  if (wrap) wrap.innerHTML = `<svg viewBox="0 0 360 190" style="width:100%;display:block;">
-    ${fette}${centro}${legenda}
-  </svg>`
+  if (wrap) wrap.innerHTML = `<div style="padding:8px 4px;">${righe}${totRow}</div>`
 }
 // ============================================================
 // SEZIONE 3 — Tabella ultimi 10 movimenti
