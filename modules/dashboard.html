@@ -77,26 +77,48 @@
 
 </div>
 
-<!-- ── Grafico andamento mensile ─────────────────────────────── -->
-<div class="table-wrap" style="margin-bottom:16px;">
-  <div class="table-head">
-    <span class="card-title">Andamento ultimi 6 mesi</span>
-    <span class="text-muted" style="font-size:11px;font-weight:500;">Incassi vs Uscite (movimenti registrati)</span>
+<!-- ── Due grafici affiancati ────────────────────────────────── -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+  <!-- Grafico barre: Incassi vs Uscite ultimi 6 mesi -->
+  <div class="table-wrap">
+    <div class="table-head">
+      <span class="card-title">Andamento ultimi 6 mesi</span>
+      <span class="text-muted" style="font-size:11px;font-weight:500;">Incassi vs Uscite</span>
+    </div>
+    <div class="loading" id="chart-loading"><div class="spinner"></div></div>
+    <div id="chart-wrap" style="display:none;padding:16px 20px;">
+      <canvas id="chart-mensile" height="200"></canvas>
+    </div>
+    <div class="empty-state" id="chart-empty" style="display:none;">
+      <p>Nessun dato. Registra movimenti per vedere il grafico.</p>
+    </div>
   </div>
 
-  <div class="loading" id="chart-loading">
-    <div class="spinner"></div>
-    Caricamento grafico...
+  <!-- Grafico torta: Categorie di spesa -->
+  <div class="table-wrap">
+    <div class="table-head">
+      <span class="card-title">Categorie di spesa</span>
+      <span class="text-muted" style="font-size:11px;font-weight:500;">Pagamenti per categoria</span>
+    </div>
+    <div class="loading" id="chart-torta-loading"><div class="spinner"></div></div>
+    <div id="chart-torta-wrap" style="display:none;padding:16px 20px;">
+      <canvas id="chart-torta" height="200"></canvas>
+    </div>
+    <div class="empty-state" id="chart-torta-empty" style="display:none;">
+      <p>Nessun pagamento registrato.</p>
+    </div>
   </div>
 
-  <div id="chart-wrap" style="display:none; padding:16px 20px;">
-    <canvas id="chart-mensile" height="110"></canvas>
-  </div>
-
-  <div class="empty-state" id="chart-empty" style="display:none;">
-    <p>Nessun dato disponibile. Registra movimenti per vedere il grafico.</p>
-  </div>
 </div>
+
+<style>
+@media (max-width: 860px) {
+  div[style*="grid-template-columns:1fr 1fr"]:first-of-type {
+    grid-template-columns: 1fr !important;
+  }
+}
+</style>
 
 <!-- ── Tabelle: movimenti + rate in scadenza ─────────────────── -->
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
