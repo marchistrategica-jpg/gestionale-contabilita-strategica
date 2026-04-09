@@ -353,3 +353,140 @@ async function deleteCosto(id) {
     toast("Errore nell'eliminazione", 'error')
   }
 }
+
+
+// ============================================================
+// REGISTRA COSTI DEL MESE → Incassi & Pagamenti
+// ============================================================
+async function registraMese() {
+  const oggi = new Date()
+
+  // Popola selettore anni
+  const selAnno = document.getElementById('cm-anno')
+  if (selAnno && !selAnno.options.length) {
+    const ac = oggi.getFullYear()
+    for (let a = ac; a >= ac - 2; a--) {
+      const opt = document.createElement('option')
+      opt.value = a; opt.textContent = a; selAnno.appendChild(opt)
+    }
+  }
+
+  // Imposta mese e anno correnti
+  const selMese = document.getElementById('cm-mese')
+  if (selMese) selMese.value = oggi.getMonth() + 1
+  if (selAnno) selAnno.value = oggi.getFullYear()
+
+  // Popola conti
+  const selConto = document.getElementById('cm-conto')
+  if (selConto && selConto.options.length <= 1) {
+    try {
+      const snap = await collections.conti().get()
+      snap.docs.forEach(d => {
+        const ct = d.data()
+        const opt = document.createElement('option')
+        opt.value = d.id
+        opt.textContent = `${ct.nome}${ct.banca ? ' — ' + ct.banca : ''}`
+        selConto.appendChild(opt)
+      })
+    } catch(e) { console.warn('conti:', e) }
+  }
+
+  // Popola lista e aggiorna al cambio mese/anno
+  _aggiornaCostiModal()
+  selMese?.addEventListener('change', _aggiornaCostiModal)
+  selAnno?.addEventListener('change', _aggiornaCostiModal)
+
+  // Collega bottone conferma (clone per rimuovere listener precedenti)
+  const btnOld = document.getElementById('cm-conferma')
+  if (btnOld) {
+    const btnNew = btnOld.cloneNode(true)
+    btnOld.parentNode.replaceChild(btnNew, btnOld)
+    btnNew.addEventListener('click', _confermaCostiMese)
+  }
+
+  document.getElementById('modal-costi-mese')?.classList.add('open')
+}
+
+function _aggiornaCostiModal() {
+  const lista  = document.getElementById('cm-lista')
+  const totEl  = document.getElementById('cm-totale')
+  if (!lista) return
+
+  const attivi = tuttICosti.filter(c => c.attivo !== false && c.tipo === 'fisso')
+
+  if (!attivi.length) {
+    lista.innerHTML = '<div class="empty-state"><p>Nessun costo fisso attivo.</p></div>'
+    if (totEl) totEl.textContent = '—'
+    return
+  }
+
+  const tot = attivi.reduce((s, c) => s + toMensile(c.importo || 0, c.periodicita), 0)
+
+  lista.innerHTML = attivi.map(c => {
+    const mensile = toMensile(c.importo || 0, c.periodicita)
+    return `<div style="display:flex;justify-content:space-between;align-items:center;
+                        padding:10px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text0);">${(c.descrizione||'—').replace(/</g,'&lt;')}</div>
+        <div style="font-size:11px;color:var(--text2);">${c.categoria||''} · ${c.periodicita||'mensile'}</div>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--red);">−${formatEuro(mensile)}</div>
+    </div>`
+  }).join('')
+
+  if (totEl) totEl.textContent = `−${formatEuro(tot)}`
+}
+
+async function _confermaCostiMese() {
+  const mese    = parseInt(document.getElementById('cm-mese')?.value)
+  const anno    = parseInt(document.getElementById('cm-anno')?.value)
+  const contoId = document.getElementById('cm-conto')?.value || null
+  const chiave  = `${anno}-${String(mese).padStart(2,'0')}`
+
+  const btn = document.getElementById('cm-conferma')
+  if (btn) { btn.disabled = true; btn.textContent = 'Registrazione...' }
+
+  try {
+    let contoNome = null
+    if (contoId) {
+      const snapC = await collections.conti().doc(contoId).get()
+      contoNome = snapC.data()?.nome || null
+    }
+
+    const dataPag = new Date(anno, mese - 1, 1)
+    const ts      = firebase.firestore.Timestamp.fromDate(dataPag)
+    const attivi  = tuttICosti.filter(c => c.attivo !== false && c.tipo === 'fisso')
+    let n = 0
+
+    for (const c of attivi) {
+      const mensile = toMensile(c.importo || 0, c.periodicita)
+      await collections.movimenti().add({
+        tipo:            'pagamento',
+        importo:         mensile,
+        data:            ts,
+        descrizione:     c.descrizione || 'Costo fisso',
+        categoria:       c.categoria || 'Costi fissi',
+        conto:           contoId,
+        conto_nome:      contoNome,
+        iva_rate:        0,
+        iva_importo:     0,
+        costo_ref:       c.id,
+        costo_auto_mese: chiave,
+        createdAt:       FieldValue.serverTimestamp()
+      })
+      n++
+    }
+
+    document.getElementById('modal-costi-mese')?.classList.remove('open')
+    const mesiNomi = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+                      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
+    toast(`✓ ${n} costi registrati in Incassi per ${mesiNomi[mese]} ${anno}`, 'success', 5000)
+
+  } catch (err) {
+    console.error('Errore registrazione costi:', err)
+    toast('Errore durante la registrazione', 'error')
+  } finally {
+    const b = document.getElementById('cm-conferma')
+    if (b) { b.disabled = false; b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Registra tutto' }
+  }
+}
