@@ -461,7 +461,7 @@ function _popolaRateScadenza(rate, contratti) {
   if (elLoading) elLoading.style.display = 'none'
 
   const oggi  = new Date(); oggi.setHours(0, 0, 0, 0)
-  const tra60 = new Date(oggi); tra60.setDate(tra60.getDate() + 60)
+  const tra60 = new Date(oggi); tra60.setDate(tra60.getDate() + 180)
 
   const rateInScadenza = rate
     .filter(r => {
