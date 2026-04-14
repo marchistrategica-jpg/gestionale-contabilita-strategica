@@ -344,10 +344,14 @@ function _initListeners() {
 
   // Calcolo IVA
   const calcIVA = () => {
-    const imp = parseFloat(document.getElementById('mov-importo').value) || 0
-    const al  = parseFloat(document.getElementById('mov-iva-rate').value) || 0
-    const iva = imp * al / 100
+    const imp    = parseFloat(document.getElementById('mov-importo').value) || 0
+    const al     = parseFloat(document.getElementById('mov-iva-rate').value) || 0
+    const iva    = imp * al / 100
+    const totale = imp + iva
     document.getElementById('mov-iva-display').textContent = formatEuro(iva)
+    // Mostra totale IVA inclusa
+    const elTot = document.getElementById('mov-totale-display')
+    if (elTot) elTot.textContent = formatEuro(totale)
   }
   document.getElementById('mov-importo').addEventListener('input', calcIVA)
   document.getElementById('mov-iva-rate').addEventListener('change', calcIVA)
@@ -497,13 +501,15 @@ async function _salvaMovimento() {
   if (!categoria)   { toast('Seleziona la categoria', 'error'); return }
   if (!importo || importo <= 0) { toast('Inserisci un importo valido', 'error'); return }
 
-  const ivaImporto = importo * (ivaRate / 100)
+  const ivaImporto  = importo * (ivaRate / 100)
+  const importoTotale = importo + ivaImporto  // totale IVA inclusa — scalato dal conto
   // Trova nome conto per compatibilità
   const contoObj   = tuttiConti.find(c => c.id === contoRef)
   const contoNome  = contoObj?.nome || contoRef || null
 
   const dati = {
-    tipo, importo,
+    tipo, importo: importoTotale,
+    imponibile:    importo,        // salva anche l'imponibile per riferimento
     data:          toTimestamp(data),
     descrizione, categoria,
     conto:         contoRef || null,
