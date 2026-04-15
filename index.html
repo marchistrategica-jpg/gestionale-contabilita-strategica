@@ -121,9 +121,8 @@
 
 <!-- App init -->
 <script type="module">
-  import { initRouter }       from './js/router.js'
-  import { todayFormatted }   from './js/utils.js'
-  import { checkCostiMensili } from './js/costi-auto.js'
+  import { initRouter }     from './js/router.js'
+  import { todayFormatted } from './js/utils.js'
 
   // Data nel topbar
   const dateEl = document.getElementById('topbar-date')
@@ -131,9 +130,6 @@
 
   // Avvia il router
   initRouter()
-
-  // Controlla costi fissi mensili (mostra modal il 1° del mese)
-  checkCostiMensili()
 </script>
 
 </body>
