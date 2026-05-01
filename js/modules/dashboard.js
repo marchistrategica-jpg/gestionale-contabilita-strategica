@@ -290,8 +290,8 @@ function _popolaGrafico(movimenti) {
     // Label mese
     svgBars += `<text x="${x}" y="${H}" text-anchor="middle" font-size="10" font-family="Montserrat,sans-serif" fill="#8fa3b8">${m.label}</text>`
     // Valore incasso sopra barra
-    if (m.inc > 0) svgBars += `<text x="${x - BAR_W/2 - GAP/2}" y="${H - 22 - hInc}" text-anchor="middle" font-size="8" font-family="Montserrat,sans-serif" fill="var(--green)" font-weight="700">${m.inc >= 1000 ? (m.inc/1000).toFixed(0)+'k' : m.inc}</text>`
-    if (m.usc > 0) svgBars += `<text x="${x + BAR_W/2 + GAP/2}" y="${H - 22 - hUsc}" text-anchor="middle" font-size="8" font-family="Montserrat,sans-serif" fill="var(--red)" font-weight="700">${m.usc >= 1000 ? (m.usc/1000).toFixed(0)+'k' : m.usc}</text>`
+    if (m.inc > 0) svgBars += `<text x="${x - BAR_W/2 - GAP/2}" y="${H - 22 - hInc}" text-anchor="middle" font-size="8" font-family="Montserrat,sans-serif" fill="var(--green)" font-weight="700">${m.inc >= 1000 ? (m.inc/1000).toFixed(1).replace('.0','')+'k' : Math.round(m.inc)+'€'}</text>`
+    if (m.usc > 0) svgBars += `<text x="${x + BAR_W/2 + GAP/2}" y="${H - 22 - hUsc}" text-anchor="middle" font-size="8" font-family="Montserrat,sans-serif" fill="var(--red)" font-weight="700">${m.usc >= 1000 ? (m.usc/1000).toFixed(1).replace('.0','')+'k' : Math.round(m.usc)+'€'}</text>`
   })
 
   // Linee griglia orizzontali
