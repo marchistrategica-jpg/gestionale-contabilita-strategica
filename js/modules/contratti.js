@@ -2,27 +2,6 @@
  * ============================================================
  * MODULO: Contratti — Logica JS (v2)
  * File:   js/modules/contratti.js
- *
- * NOVITÀ rispetto alla v1:
- *   - Rimosso campo "numero contratto"
- *   - Rimosso campo "data fine"
- *   - Aggiunto: imponibile + IVA (aliquota selezionabile) + totale auto
- *   - Aggiunto: modalità di pagamento (note)
- *   - Aggiunto: piano rate (collezione /rate in Firestore)
- *   - Filtri: Tutti / In scadenza / Scaduti / Sospesi / Conclusi
- *             "In scadenza" e "Scaduti" calcolati dalle rate
- *
- * Struttura Firestore:
- *   /contratti/{id}
- *     cliente, data_inizio, stato (corrente|sospeso|concluso)
- *     importo_imponibile, iva_rate, importo_iva, importo_totale
- *     modalita_pagamento, note, createdAt
- *
- *   /rate/{id}
- *     contratto_ref, cliente (denorm.)
- *     descrizione, importo_imponibile, iva_rate, importo_iva, importo_totale
- *     data_prevista, data_pagamento, stato (attesa|pagata|scaduta)
- *     createdAt
  * ============================================================
  */
 
@@ -31,16 +10,15 @@ import { formatEuro, formatDate, toInputDate, toast, confirmDelete } from '../..
 
 
 // ── Stato locale ──────────────────────────────────────────────
-let _contratti    = []   // tutti i contratti Firestore
-let _rateMap      = {}   // { contratto_id: [rate...] }
+let _contratti    = []
+let _rateMap      = {}
 let _filtroStato  = 'tutti'
 let _testoRicerca = ''
 
-// Rate temporanee nel form (prima del salvataggio)
-let _conti          = []   // conti correnti Firestore
-let _rateForm       = []   // array di oggetti { tempId, id?, descrizione, imponibile, iva_rate, data_prevista }
-let _rateEliminate  = []   // id di rate esistenti da cancellare al salvataggio
-let _contrattoInEdit = null // id contratto in modifica (null = nuovo)
+let _conti          = []
+let _rateForm       = []
+let _rateEliminate  = []
+let _contrattoInEdit = null
 
 
 // ── ALIQUOTE IVA ITALIA ───────────────────────────────────────
@@ -51,6 +29,11 @@ const ALIQUOTE_IVA = [
   { v: 10, l: '10%' },
   { v: 22, l: '22% – Ordinaria' },
 ]
+
+// ── Parsa numero in formato italiano (es. "12.600,00" → 12600) ─
+function _parseIta(s) {
+  return parseFloat((s || '0').replace(/\./g, '').replace(',', '.')) || 0
+}
 
 
 // ============================================================
@@ -76,7 +59,6 @@ async function _caricaDati() {
   if (elEmpty) elEmpty.style.display = 'none'
 
   try {
-    // Carica contratti e rate in parallelo
     const [snapC, snapR, snapConti] = await Promise.all([
       collections.contratti().get(),
       collections.rate().get(),
@@ -86,7 +68,6 @@ async function _caricaDati() {
     _conti = snapConti.docs.map(d => ({ id: d.id, ...d.data() }))
     _conti.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
 
-    // Popola select conto nel form
     const selConto = document.getElementById('f-conto-accredito')
     if (selConto) {
       selConto.innerHTML = '<option value="">— Seleziona il conto —</option>'
@@ -99,17 +80,14 @@ async function _caricaDati() {
     }
 
     _contratti = snapC.docs.map(d => ({ id: d.id, ...d.data() }))
-    // Ordina per data_inizio desc (in JS per evitare indici Firestore)
     _contratti.sort((a, b) => {
       const da = a.data_inizio?.toDate ? a.data_inizio.toDate() : new Date(a.data_inizio || 0)
       const db = b.data_inizio?.toDate ? b.data_inizio.toDate() : new Date(b.data_inizio || 0)
       return db - da
     })
 
-    // Raggruppa rate per contratto
     _rateMap = {}
     const rateAll = snapR.docs.map(d => ({ id: d.id, ...d.data() }))
-    // Ordina rate per data_prevista asc in JS
     rateAll.sort((a, b) => {
       const da = a.data_prevista?.toDate ? a.data_prevista.toDate() : new Date(a.data_prevista || 0)
       const db = b.data_prevista?.toDate ? b.data_prevista.toDate() : new Date(b.data_prevista || 0)
@@ -130,10 +108,9 @@ async function _caricaDati() {
 
 
 // ============================================================
-// STATO COMPUTATO — dipende dalle rate del contratto
+// STATO COMPUTATO
 // ============================================================
 function _computaStato(contratto) {
-  // Se manualmente sospeso o concluso, ha la precedenza
   if (contratto.stato === 'sospeso')  return 'sospeso'
   if (contratto.stato === 'concluso') return 'concluso'
 
@@ -143,14 +120,12 @@ function _computaStato(contratto) {
 
   const rateAttesa = rate.filter(r => r.stato === 'attesa')
 
-  // Ha rate scadute (data prevista nel passato)
   const haScadute = rateAttesa.some(r => {
     const d = _toDate(r.data_prevista)
     return d && d < oggi
   })
   if (haScadute) return 'scaduto'
 
-  // Ha rate in scadenza entro 30 giorni
   const haInScadenza = rateAttesa.some(r => {
     const d = _toDate(r.data_prevista)
     return d && d >= oggi && d <= tra30
@@ -175,17 +150,14 @@ function _renderTabella() {
   const oggi  = new Date(); oggi.setHours(0,0,0,0)
   const tra30 = new Date(oggi); tra30.setDate(tra30.getDate() + 30)
 
-  // Applica filtri
   const filtrati = _contratti.filter(c => {
     const statoComp = _computaStato(c)
 
-    // Filtro testo
     if (_testoRicerca) {
       const q = _testoRicerca.toLowerCase()
       if (!(c.cliente || '').toLowerCase().includes(q)) return false
     }
 
-    // Filtro stato
     if (_filtroStato === 'tutti') return true
     return statoComp === _filtroStato
   })
@@ -209,24 +181,20 @@ function _renderTabella() {
     const statoComp = _computaStato(c)
     const rate      = _rateMap[c.id] || []
 
-    // Riga CSS class
     let rowClass = ''
     if (statoComp === 'scaduto')     rowClass = 'row-scaduto'
     if (statoComp === 'in_scadenza') rowClass = 'row-in-scadenza'
 
-    // Conteggio rate pagate
     const rateTot         = rate.length
     const ratePagate      = rate.filter(r => r.stato === 'pagata').length
     const rateAttesaCount = rate.filter(r => r.stato === 'attesa').length
     const rateAttesaFirst = rate.filter(r => r.stato === 'attesa')
       .sort((a,b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))[0]?.id || ''
 
-    // Prossima rata in attesa
     const prossima = rate
       .filter(r => r.stato === 'attesa')
       .sort((a, b) => _toDate(a.data_prevista) - _toDate(b.data_prevista))[0]
 
-    // Etichetta prossima rata
     let prossimaHtml = '—'
     if (prossima) {
       const dp = _toDate(prossima.data_prevista)
@@ -243,7 +211,6 @@ function _renderTabella() {
       `
     }
 
-    // Badge rate
     const badgeRate = rateTot > 0
       ? `<span style="font-size:11px;font-weight:700;color:var(--text1);cursor:pointer;"
            onclick="window.__contrattiDettaglioRate('${c.id}')"
@@ -284,7 +251,6 @@ function _renderTabella() {
   if (tbody) {
     tbody.innerHTML = righe
 
-    // Listener bottoni modifica / elimina
     tbody.querySelectorAll('.btn-modifica').forEach(btn => {
       btn.addEventListener('click', () => {
         const c = _contratti.find(x => x.id === btn.dataset.id)
@@ -302,14 +268,12 @@ function _renderTabella() {
 // EVENTI UI
 // ============================================================
 function _collegaEventi() {
-  // Ricerca
   document.getElementById('input-ricerca')
     ?.addEventListener('input', e => {
       _testoRicerca = e.target.value.toLowerCase().trim()
       _renderTabella()
     })
 
-  // Chip filtro stato
   document.getElementById('filtri-stato')
     ?.querySelectorAll('.chip-stato')
     .forEach(chip => {
@@ -321,11 +285,9 @@ function _collegaEventi() {
       })
     })
 
-  // Nuovo contratto
   document.getElementById('btn-nuovo')
     ?.addEventListener('click', _apriModalNuovo)
 
-  // Annulla modal
   document.getElementById('btn-annulla')
     ?.addEventListener('click', _chiudiModal)
 
@@ -337,21 +299,17 @@ function _collegaEventi() {
       if (e.target.id === 'modal-contratto') _chiudiModal()
     })
 
-  // Salva
   document.getElementById('btn-salva')
     ?.addEventListener('click', _salvaContratto)
 
-  // Calcolo automatico IVA contratto
   document.getElementById('f-imponibile')
     ?.addEventListener('input', _aggiornaTotaleContratto)
   document.getElementById('f-iva-rate')
     ?.addEventListener('change', _aggiornaTotaleContratto)
 
-  // Aggiungi rata
   document.getElementById('btn-aggiungi-rata')
     ?.addEventListener('click', () => _aggiungiRigaRata())
 
-  // Modal dettaglio rate
   document.getElementById('modal-rate-close')
     ?.addEventListener('click', () => _chiudiModalRate())
   document.getElementById('modal-rate-chiudi')
@@ -361,7 +319,6 @@ function _collegaEventi() {
       if (e.target.id === 'modal-rate-dettaglio') _chiudiModalRate()
     })
 
-  // Modal pagamento: close buttons
   document.getElementById('modal-pag-close')
     ?.addEventListener('click', () => document.getElementById('modal-pagamento').classList.remove('open'))
   document.getElementById('modal-pag-annulla')
@@ -371,7 +328,6 @@ function _collegaEventi() {
   document.getElementById('modal-pagamento')
     ?.addEventListener('click', e => { if (e.target.id === 'modal-pagamento') e.target.classList.remove('open') })
 
-  // Espone funzioni al DOM
   window.__contrattiDettaglioRate = _apriDettaglioRate
   window.__contrattiApriPagamento = _apriModalPagamento
 }
@@ -388,8 +344,8 @@ function _aggiornaTotaleContratto() {
 
   const elIva  = document.getElementById('f-iva-importo')
   const elTot  = document.getElementById('f-totale')
-  if (elIva) elIva.value = iva > 0 ? _fmt2(iva) : '0,00'
-  if (elTot) elTot.value = totale > 0 ? _fmt2(totale) : '0,00'
+  if (elIva) elIva.value = _fmt2(iva)
+  if (elTot) elTot.value = _fmt2(totale)
 
   _aggiornaTotaliRiepilogo()
 }
@@ -403,14 +359,11 @@ function _aggiungiRigaRata(dati = {}) {
   const emptyHint   = document.getElementById('rate-empty-hint')
   const rataHeader  = document.getElementById('rata-header')
 
-  // Nascondi hint, mostra header
   if (emptyHint)  emptyHint.style.display  = 'none'
   if (rataHeader) rataHeader.style.display = 'grid'
 
-  // ID temporaneo per questa riga nel DOM
   const tempId = `r_${Date.now()}_${Math.random().toString(36).substr(2,5)}`
 
-  // Opzioni aliquote IVA
   const opzioniIva = ALIQUOTE_IVA.map(a =>
     `<option value="${a.v}" ${a.v === (dati.iva_rate ?? 22) ? 'selected' : ''}>${a.l}</option>`
   ).join('')
@@ -418,7 +371,7 @@ function _aggiungiRigaRata(dati = {}) {
   const riga = document.createElement('div')
   riga.className  = 'rata-row'
   riga.dataset.tempId = tempId
-  if (dati.id) riga.dataset.rataId = dati.id   // se è rata esistente
+  if (dati.id) riga.dataset.rataId = dati.id
 
   riga.innerHTML = `
     <input type="text"   class="r-desc"   placeholder="es. Acconto"  value="${_esc(dati.descrizione || '')}"/>
@@ -432,11 +385,10 @@ function _aggiungiRigaRata(dati = {}) {
     </button>
   `
 
-  // Listener calcolo automatico IVA per questa riga
-  const inpImp = riga.querySelector('.r-imp')
-  const selIva = riga.querySelector('.r-iva')
+  const inpImp    = riga.querySelector('.r-imp')
+  const selIva    = riga.querySelector('.r-iva')
   const inpIvaImp = riga.querySelector('.r-ivaimp')
-  const inpTot = riga.querySelector('.r-tot')
+  const inpTot    = riga.querySelector('.r-tot')
 
   const calcola = () => {
     const imp  = parseFloat(inpImp.value) || 0
@@ -451,9 +403,7 @@ function _aggiungiRigaRata(dati = {}) {
   inpImp.addEventListener('input',  calcola)
   selIva.addEventListener('change', calcola)
 
-  // Rimuovi riga
   riga.querySelector('.btn-rata-remove').addEventListener('click', () => {
-    // Se rata esistente: segna per eliminazione
     if (riga.dataset.rataId) _rateEliminate.push(riga.dataset.rataId)
     riga.remove()
     _aggiornaVisiblitaHeader()
@@ -481,6 +431,8 @@ function _aggiornaVisiblitaHeader() {
 
 // ============================================================
 // RIEPILOGO RATE vs TOTALE CONTRATTO
+// FIX: usa _parseIta() per leggere correttamente i numeri
+//      in formato italiano (es. "12.600,00" → 12600)
 // ============================================================
 function _aggiornaTotaliRiepilogo() {
   const container = document.getElementById('rate-container')
@@ -499,21 +451,19 @@ function _aggiornaTotaliRiepilogo() {
 
   if (elRiep) elRiep.style.display = 'block'
 
-  // Somma totale rate
+  // FIX: parsa numeri formato italiano prima di sommare
   let totRate = 0
   righe.forEach(riga => {
-    totRate += parseFloat(riga.querySelector('.r-tot')?.value) || 0
+    totRate += _parseIta(riga.querySelector('.r-tot')?.value)
   })
 
-  // Totale contratto dal form
-  const imponibile = parseFloat(document.getElementById('f-imponibile')?.value) || 0
-  const ivaRate    = parseFloat(document.getElementById('f-iva-rate')?.value)   || 0
+  const imponibile   = parseFloat(document.getElementById('f-imponibile')?.value) || 0
+  const ivaRate      = parseFloat(document.getElementById('f-iva-rate')?.value)   || 0
   const totContratto = imponibile + (imponibile * ivaRate / 100)
 
   if (elCalc) elCalc.textContent = formatEuro(totRate)
   if (elCont) elCont.textContent = formatEuro(totContratto)
 
-  // Mostra differenza se presente
   const diff = Math.abs(totRate - totContratto)
   if (diff > 0.01 && totContratto > 0) {
     if (elDiffRow) elDiffRow.style.display = 'block'
@@ -549,7 +499,6 @@ function _apriModalNuovo() {
   document.getElementById('f-conto-accredito').value = ''
   document.getElementById('modal-contratto-title').textContent = 'Nuovo contratto'
 
-  // Pulisce rate container
   _svuotaRateContainer()
 
   document.getElementById('modal-contratto').classList.add('open')
@@ -577,7 +526,6 @@ function _apriModalModifica(c) {
   document.getElementById('f-conto-accredito').value = c.conto_accredito || ''
   document.getElementById('modal-contratto-title').textContent = `Modifica — ${c.cliente}`
 
-  // Popola rate
   _svuotaRateContainer()
   const rate = _rateMap[c.id] || []
   rate.forEach(r => _aggiungiRigaRata(r))
@@ -620,7 +568,6 @@ async function _salvaContratto() {
   const modalita   = document.getElementById('f-modalita').value.trim()
   const note       = document.getElementById('f-note').value.trim()
 
-  // Validazione
   if (!cliente)    { toast('Inserisci il nome del cliente', 'error'); return }
   if (!dataInizio) { toast('Inserisci la data di firma', 'error'); return }
   if (!imponibile || imponibile <= 0) { toast('Inserisci un importo imponibile valido', 'error'); return }
@@ -645,7 +592,6 @@ async function _salvaContratto() {
     conto_accredito_nome: contoObj?.nome || null,
   }
 
-  // Legge le righe rata dal DOM
   const righeRata = document.getElementById('rate-container')?.querySelectorAll('.rata-row') || []
   const rateValide = []
 
@@ -677,7 +623,6 @@ async function _salvaContratto() {
     })
   }
 
-  // Disabilita bottone
   const btnSalva = document.getElementById('btn-salva')
   if (btnSalva) { btnSalva.disabled = true; btnSalva.textContent = 'Salvataggio...' }
 
@@ -685,31 +630,25 @@ async function _salvaContratto() {
     let contrattoId = id
 
     if (id) {
-      // Aggiorna contratto esistente
       await collections.contratti().doc(id).update(datiContratto)
     } else {
-      // Crea nuovo contratto
       datiContratto.createdAt = FieldValue.serverTimestamp()
       const ref = await collections.contratti().add(datiContratto)
       contrattoId = ref.id
     }
 
-    // Elimina rate segnate per cancellazione
     for (const rataId of _rateEliminate) {
       await collections.rate().doc(rataId).delete()
     }
 
-    // Salva / aggiorna rate
     for (const { rataId, dati } of rateValide) {
       dati.contratto_ref = contrattoId
       dati.cliente       = cliente
 
       if (rataId) {
-        // Aggiorna rata esistente (mantieni stato pagata se già pagata)
         const rataSnap = await collections.rate().doc(rataId).get()
         const statoAttuale = rataSnap.data()?.stato
         if (statoAttuale === 'pagata') {
-          // Non sovrascrivere data_pagamento o stato se già pagata
           const { stato, data_pagamento, ...datiSenzaStato } = dati
           await collections.rate().doc(rataId).update(datiSenzaStato)
         } else {
@@ -746,13 +685,11 @@ async function _eliminaContratto(id) {
   if (!confirmDelete(`Eliminare il contratto di ${c?.cliente || 'questo cliente'}? Verranno eliminate anche le rate associate.`)) return
 
   try {
-    // Elimina prima tutte le rate
     const rateAssociate = _rateMap[id] || []
     for (const r of rateAssociate) {
       await collections.rate().doc(r.id).delete()
     }
 
-    // Poi elimina il contratto
     await collections.contratti().doc(id).delete()
     toast('Contratto eliminato', 'success')
 
@@ -784,7 +721,6 @@ function _apriDettaglioRate(contrattoId) {
   if (!rate.length) {
     body.innerHTML = '<div class="empty-state"><p>Nessuna rata programmata per questo contratto.</p></div>'
   } else {
-    // Header
     const header = `<div style="display:grid;grid-template-columns:1.5fr 100px 100px 110px 80px;gap:8px;padding:0 12px 8px;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text2);">
       <span>Descrizione</span><span>Data prevista</span><span>Totale</span><span>Data pagamento</span><span>Stato</span>
     </div>`
@@ -797,7 +733,6 @@ function _apriDettaglioRate(contrattoId) {
         ? '<span class="badge badge-red">Scaduta</span>'
         : '<span class="badge badge-amber">In attesa</span>'
 
-        // Bottone "Segna come pagata" con data picker inline
       const oggi = new Date().toISOString().split('T')[0]
       const btnPaga = r.stato === 'attesa' ? `
         <div style="margin-top:10px;padding:10px;background:var(--bg2);border-radius:6px;border:1px solid var(--border);">
@@ -827,9 +762,8 @@ function _apriDettaglioRate(contrattoId) {
       </div>`
     }).join('')
 
-    // Totale
-    const totPagate   = rate.filter(r => r.stato === 'pagata').reduce((s, r) => s + (r.importo_totale || 0), 0)
-    const totAttesa   = rate.filter(r => r.stato === 'attesa').reduce((s, r) => s + (r.importo_totale || 0), 0)
+    const totPagate = rate.filter(r => r.stato === 'pagata').reduce((s, r) => s + (r.importo_totale || 0), 0)
+    const totAttesa = rate.filter(r => r.stato === 'attesa').reduce((s, r) => s + (r.importo_totale || 0), 0)
     const totRiepilogo = `<div style="margin-top:12px;padding:10px 12px;background:var(--bg1);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:12px;">
       <div class="flex-center gap-8" style="justify-content:space-between;">
         <span style="color:var(--green);font-weight:600;">✓ Pagato</span>
@@ -847,7 +781,6 @@ function _apriDettaglioRate(contrattoId) {
   document.getElementById('modal-rate-dettaglio').classList.add('open')
 }
 
-// Fallback pagamento senza modal (se contratti.html non aggiornato)
 async function _confermaPagamentoDirectly(rataId, contrattoId, dataPag) {
   const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
   const contratto = _contratti.find(x => x.id === contrattoId)
@@ -883,7 +816,7 @@ function _chiudiModalRate() {
 
 
 // ============================================================
-// MODAL PAGAMENTO — apri con dati rata pre-compilati
+// MODAL PAGAMENTO
 // ============================================================
 function _apriModalPagamento(rataId, contrattoId) {
   if (!rataId) {
@@ -899,15 +832,11 @@ function _apriModalPagamento(rataId, contrattoId) {
 
   const modal = document.getElementById('modal-pagamento')
   if (!modal) {
-    // Fallback: se il modal non esiste nel DOM (HTML non aggiornato),
-    // usa una semplice finestra di dialogo
-    const data = prompt(`Pagamento di ${formatEuro(r.importo_totale)} — ${r.descrizione}
-Inserisci la data di pagamento (YYYY-MM-DD):`, new Date().toISOString().split('T')[0])
+    const data = prompt(`Pagamento di ${formatEuro(r.importo_totale)} — ${r.descrizione}\nInserisci la data di pagamento (YYYY-MM-DD):`, new Date().toISOString().split('T')[0])
     if (data) _confermaPagamentoDirectly(rataId, contrattoId, data)
     return
   }
 
-  // Compila il modal con i dati della rata
   document.getElementById('modal-pag-rata-id').value      = rataId
   document.getElementById('modal-pag-contratto-id').value = contrattoId
   document.getElementById('modal-pag-data').value          = new Date().toISOString().split('T')[0]
@@ -916,16 +845,11 @@ Inserisci la data di pagamento (YYYY-MM-DD):`, new Date().toISOString().split('T
   document.getElementById('modal-pag-importo').textContent = formatEuro(r.importo_totale)
   document.getElementById('modal-pag-scadenza').textContent =
     r.data_prevista ? `Scadenza: ${formatDate(_toDate(r.data_prevista))}` : ''
-
-  const contoNome = contratto.conto_accredito_nome || '—'
-  document.getElementById('modal-pag-conto-info').textContent = contoNome
+  document.getElementById('modal-pag-conto-info').textContent = contratto.conto_accredito_nome || '—'
 
   document.getElementById('modal-pagamento').classList.add('open')
 }
 
-// ============================================================
-// CONFERMA PAGAMENTO — salva movimento e aggiorna rata
-// ============================================================
 async function _confermaPagamento() {
   const rataId      = document.getElementById('modal-pag-rata-id').value
   const contrattoId = document.getElementById('modal-pag-contratto-id').value
@@ -943,12 +867,10 @@ async function _confermaPagamento() {
   try {
     const ts = toTimestamp(dataPag)
 
-    // 1. Controlla se esiste già un movimento per questa rata
     const movEsistente = await collections.movimenti()
       .where('rata_ref', '==', rataId).limit(1).get()
 
     if (movEsistente.empty) {
-      // 2. Crea il movimento in /movimenti
       await collections.movimenti().add({
         tipo:          'incasso',
         importo:       r.importo_totale || 0,
@@ -965,21 +887,16 @@ async function _confermaPagamento() {
       })
     }
 
-    // 3. Segna la rata come pagata
     await collections.rate().doc(rataId).update({
       stato:          'pagata',
       data_pagamento: ts
     })
 
-    // 4. Aggiorna cache locale
     if (r) { r.stato = 'pagata'; r.data_pagamento = ts }
 
-    // 5. Chiudi modal
     document.getElementById('modal-pagamento').classList.remove('open')
-
     toast(`✓ Pagamento di ${formatEuro(r.importo_totale)} registrato — tutto aggiornato!`, 'success')
 
-    // 6. Ricarica e aggiorna vista
     await _caricaDati()
     _renderTabella()
 
@@ -994,27 +911,21 @@ async function _confermaPagamento() {
   }
 }
 
-// ============================================================
-// SEGNA RATA COME PAGATA (dal pannello dettaglio rate)
-// ============================================================
 async function _pagaRata(rataId, contrattoId) {
   const r = (_rateMap[contrattoId] || []).find(x => x.id === rataId)
   const contratto = _contratti.find(x => x.id === contrattoId)
   if (!r || !contratto) return
 
-  // Leggi la data selezionata dall'input inline
   const inputData = document.getElementById(`data-paga-${rataId}`)
   const dataPagamento = inputData?.value || new Date().toISOString().split('T')[0]
 
-  // Disabilita il bottone durante il salvataggio
   const btn = document.querySelector(`[onclick*="${rataId}"]`)
   if (btn) { btn.disabled = true; btn.textContent = 'Salvataggio...' }
 
   try {
     const ts = toTimestamp(dataPagamento)
 
-    // 1. Crea il movimento in /movimenti
-    const movimento = {
+    await collections.movimenti().add({
       tipo:          'incasso',
       importo:       r.importo_totale || 0,
       data:          ts,
@@ -1027,25 +938,19 @@ async function _pagaRata(rataId, contrattoId) {
       contratto_ref: contrattoId,
       rata_ref:      rataId,
       createdAt:     FieldValue.serverTimestamp()
-    }
-    await collections.movimenti().add(movimento)
+    })
 
-    // 2. Segna la rata come pagata
     await collections.rate().doc(rataId).update({
       stato:          'pagata',
       data_pagamento: ts
     })
 
-    // 3. Aggiorna cache locale
     if (r) { r.stato = 'pagata'; r.data_pagamento = ts }
 
     toast(`Pagamento di ${formatEuro(r.importo_totale)} registrato ✓`, 'success')
 
-    // 4. Ricarica dati e aggiorna la vista
     await _caricaDati()
     _renderTabella()
-
-    // 5. Riapri il modal aggiornato
     _apriDettaglioRate(contrattoId)
 
   } catch (err) {
@@ -1055,7 +960,6 @@ async function _pagaRata(rataId, contrattoId) {
   }
 }
 
-// Espone al DOM
 window.__contrattiPagaRata = _pagaRata
 
 
@@ -1090,7 +994,6 @@ function _esc(str) {
     .replace(/"/g, '&quot;')
 }
 
-// Formatta numero con 2 decimali (per i campi readonly)
 function _fmt2(n) {
   if (isNaN(n) || n === null) return '0,00'
   return new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
