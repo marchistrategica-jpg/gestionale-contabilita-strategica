@@ -5,7 +5,8 @@
 // ============================================================
 
 import { db, collections, toTimestamp } from '../firebase-config.js'
-import { formatEuro, formatDate, toInputDate, toast, openModal, closeModal, initModalClose, confirmDelete, righeMovimento } from '../utils.js'
+import { formatEuro, formatDate, toInputDate, toast, openModal, closeModal, initModalClose, confirmDelete,
+         righeMovimento, scadenzaRitenute, periodoRitenute, giorniDaOggi, toDate } from '../utils.js'
 
 // ---- Stato locale del modulo ----
 let tuttiMovimenti = []   // Cache movimenti Firestore
@@ -26,12 +27,25 @@ export async function init() {
     caricaMovimenti()
   ])
 
-  // Renderizza entrambe le sezioni
+  // Renderizza le tre sezioni
   renderConti()
   renderIVA()
+  renderRitenute()
 
   // Collega tutti gli event listener
   collegaEventi()
+}
+
+
+/**
+ * Ricarica tutto da Firestore e ridisegna. Usata dopo ogni scrittura
+ * (versamento ritenute, annullamento) per non lavorare su dati stantii.
+ */
+async function caricaDati() {
+  await Promise.all([caricaConti(), caricaMovimenti()])
+  renderConti()
+  renderIVA()
+  renderRitenute()
 }
 
 // ════════════════════════════════════════════════════════════
@@ -548,6 +562,11 @@ async function eliminaConto(id, nome) {
 // ════════════════════════════════════════════════════════════
 
 function collegaEventi() {
+  // ── Modal versamento ritenute ──
+  document.getElementById('modal-f24-close')?.addEventListener('click', () => closeModal('modal-f24'))
+  document.getElementById('modal-f24-annulla')?.addEventListener('click', () => closeModal('modal-f24'))
+  document.getElementById('modal-f24-salva')?.addEventListener('click', salvaVersamentoF24)
+
 
   // Bottone "Aggiungi Conto"
   document.getElementById('btn-nuovo-conto')
@@ -598,4 +617,295 @@ function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+
+// ════════════════════════════════════════════════════════════
+// RITENUTE D'ACCONTO
+//
+// Una ritenuta nasce quando registri il pagamento di una fattura che la
+// prevede: `importo` del movimento è già il netto, e `ritenuta_importo`
+// è la parte trattenuta che resta a debito verso lo Stato.
+//
+// Il versamento è cumulativo: tutte le ritenute dei pagamenti di un mese
+// si versano con un unico F24 entro il 16 del mese successivo.
+// ════════════════════════════════════════════════════════════
+
+const MESI_IT = ['gennaio','febbraio','marzo','aprile','maggio','giugno',
+                 'luglio','agosto','settembre','ottobre','novembre','dicembre']
+
+function _nomePeriodo(chiave) {
+  const [a, m] = chiave.split('-')
+  return `${MESI_IT[Number(m) - 1]} ${a}`
+}
+
+/** Raggruppa le ritenute NON versate per mese di pagamento. */
+function raggruppaRitenute(movimenti) {
+  const gruppi = {}
+  movimenti
+    .filter(m => Number(m.ritenuta_importo) > 0 && m.ritenuta_versata !== true)
+    .forEach(m => {
+      const k = periodoRitenute(m.data)
+      if (!k) return
+      if (!gruppi[k]) gruppi[k] = { periodo: k, righe: [], totale: 0, scadenza: scadenzaRitenute(m.data) }
+      gruppi[k].righe.push(m)
+      gruppi[k].totale = Math.round((gruppi[k].totale + Number(m.ritenuta_importo)) * 100) / 100
+    })
+  return Object.values(gruppi).sort((a, b) => a.periodo.localeCompare(b.periodo))
+}
+
+/** Gli F24 già registrati, dal più recente. */
+function versamentiRegistrati(movimenti) {
+  return movimenti
+    .filter(m => m.f24_periodo && Array.isArray(m.f24_ritenute_ref))
+    .sort((a, b) => (toDate(b.data) || 0) - (toDate(a.data) || 0))
+}
+
+function renderRitenute() {
+  const gruppi   = raggruppaRitenute(tuttiMovimenti)
+  const versati  = versamentiRegistrati(tuttiMovimenti)
+
+  // ── KPI: due sole. Otto card su questa pagina sarebbero troppe ──
+  const oggi     = new Date()
+  const scadute  = gruppi.filter(g => giorniDaOggi(g.scadenza) < 0)
+  const totScad  = Math.round(scadute.reduce((s, g) => s + g.totale, 0) * 100) / 100
+  const totTutte = Math.round(gruppi.reduce((s, g) => s + g.totale, 0) * 100) / 100
+  const prossima = gruppi.filter(g => giorniDaOggi(g.scadenza) >= 0)[0] || null
+
+  const kpi = document.getElementById('rit-kpi')
+  if (kpi) {
+    kpi.innerHTML = `
+      <div class="kpi-card ${totScad > 0 ? 'red' : (totTutte > 0 ? 'amber' : 'green')}">
+        <div class="kpi-label">Da versare</div>
+        <div class="kpi-value" style="color:${totScad > 0 ? 'var(--red)' : (totTutte > 0 ? 'var(--amber)' : 'var(--green)')};">${formatEuro(totTutte)}</div>
+        <div class="kpi-sub">${
+          totScad > 0 ? `${formatEuro(totScad)} già scaduti`
+          : totTutte > 0 ? `${gruppi.length} scadenz${gruppi.length === 1 ? 'a' : 'e'} aperte`
+          : 'niente in sospeso'
+        }</div>
+      </div>
+      <div class="kpi-card ${prossima ? 'secondary' : 'green'}">
+        <div class="kpi-label">Prossima scadenza</div>
+        <div class="kpi-value" style="font-size:20px;">${prossima ? formatEuro(prossima.totale) : '—'}</div>
+        <div class="kpi-sub">${
+          prossima ? `${formatDate(prossima.scadenza)} · tra ${giorniDaOggi(prossima.scadenza)}gg`
+                   : 'nessuna scadenza futura'
+        }</div>
+      </div>`
+  }
+
+  // ── Periodi da versare ──
+  const box = document.getElementById('rit-periodi')
+  if (!box) return
+
+  if (!gruppi.length) {
+    box.innerHTML = `<div class="table-wrap"><div class="empty-state" style="min-height:140px;">
+      <p style="font-size:12.5px;">Nessuna ritenuta da versare.</p>
+      <p style="font-size:11px;margin-top:6px;color:var(--text2);">
+        Le ritenute compaiono qui quando registri il pagamento di una fattura che le prevede,
+        da Incassi &amp; Pagamenti.
+      </p>
+    </div></div>`
+  } else {
+    box.innerHTML = gruppi.map(g => {
+      const gg      = giorniDaOggi(g.scadenza)
+      const scaduto = gg < 0
+      // Si versa dal 1° del mese successivo: prima il mese non è chiuso
+      const oraChiuso = _periodoChiuso(g.periodo)
+
+      const badge = scaduto ? `<span class="badge badge-red">Scaduto da ${Math.abs(gg)}gg</span>`
+                  : gg <= 5 ? `<span class="badge badge-amber">tra ${gg}gg</span>`
+                  : `<span class="badge badge-gray">tra ${gg}gg</span>`
+
+      return `<div class="table-wrap" style="margin-bottom:14px;">
+        <div class="table-head f24-head ${scaduto ? 'scaduto' : ''}">
+          <div>
+            <div class="f24-mese">Ritenute di ${_nomePeriodo(g.periodo)}</div>
+            <div class="f24-scad">Da versare entro il <strong>${formatDate(g.scadenza)}</strong></div>
+          </div>
+          <div style="text-align:right;">
+            <div class="f24-tot">${formatEuro(g.totale)}</div>
+            ${badge}
+          </div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>Pagato il</th><th>A chi</th><th class="text-center">Aliquota</th>
+            <th class="text-right">Base</th><th class="text-right">Ritenuta</th>
+          </tr></thead>
+          <tbody>
+            ${g.righe.sort((a, b) => (toDate(a.data) || 0) - (toDate(b.data) || 0)).map(m => `
+              <tr>
+                <td style="font-size:12px;">${formatDate(m.data)}</td>
+                <td style="font-weight:600;color:var(--text0);">${_escapeHtml(m.descrizione || '—')}
+                  ${m.numero_fattura ? `<div style="font-size:10px;color:var(--text2);font-weight:500;">${_escapeHtml(m.numero_fattura)}</div>` : ''}
+                </td>
+                <td class="text-center" style="font-size:12px;">${m.ritenuta_aliquota != null ? String(m.ritenuta_aliquota).replace('.', ',') + '%' : 'manuale'}</td>
+                <td class="text-right" style="font-size:12px;color:var(--text1);">${m.ritenuta_base ? formatEuro(m.ritenuta_base) : '—'}</td>
+                <td class="text-right fw-700">${formatEuro(m.ritenuta_importo)}</td>
+              </tr>`).join('')}
+            <tr style="background:rgba(15,80,123,0.04);">
+              <td colspan="4" class="fw-700" style="font-size:12px;color:var(--text1);">TOTALE DA VERSARE</td>
+              <td class="text-right fw-800" style="font-size:16px;color:${scaduto ? 'var(--red)' : 'var(--text0)'};">${formatEuro(g.totale)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="f24-azione">
+          ${oraChiuso
+            ? `<button class="btn btn-primary btn-sm" data-versa="${g.periodo}">Registra le ritenute versate — ${formatEuro(g.totale)}</button>
+               <span class="f24-hint">Crea un movimento solo e marca ${g.righe.length} ritenut${g.righe.length === 1 ? 'a' : 'e'} come versate</span>`
+            : `<button class="btn btn-secondary btn-sm" disabled>Il mese non è ancora chiuso</button>
+               <span class="f24-hint">Si potrà versare dal 1° ${MESI_IT[(Number(g.periodo.split('-')[1]) % 12)]}</span>`
+          }
+        </div>
+      </div>`
+    }).join('')
+  }
+
+  // ── Versamenti già registrati ──
+  const boxV = document.getElementById('rit-versate')
+  if (boxV) {
+    boxV.innerHTML = !versati.length ? '' : `
+      <div class="table-wrap" style="margin-top:18px;">
+        <div class="table-head"><div class="cli-sez" style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--secondary);">Ritenute già versate</div></div>
+        <table>
+          <thead><tr><th>Versato il</th><th>Periodo</th><th>Conto</th><th class="text-right">Importo</th><th></th></tr></thead>
+          <tbody>
+            ${versati.map(f => `<tr>
+              <td style="font-size:12px;">${formatDate(f.data)}</td>
+              <td style="font-weight:600;color:var(--text0);">${_nomePeriodo(f.f24_periodo)}</td>
+              <td style="font-size:11px;color:var(--text1);">${_escapeHtml(f.conto_nome || '—')}</td>
+              <td class="text-right fw-700">${formatEuro(f.importo)}</td>
+              <td class="text-right"><button class="btn btn-secondary btn-sm" data-annulla="${f.id}">Annulla</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`
+  }
+
+  _collegaEventiRitenute()
+}
+
+// Un periodo si può versare solo a mese chiuso: dal 1° del mese dopo
+function _periodoChiuso(periodo) {
+  const [a, m] = periodo.split('-').map(Number)
+  const primoGiornoDopo = new Date(a, m, 1)   // m è 1-based → questo è il mese dopo
+  return new Date() >= primoGiornoDopo
+}
+
+function _escapeHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function _collegaEventiRitenute() {
+  document.querySelectorAll('[data-versa]').forEach(b =>
+    b.addEventListener('click', () => apriModalF24(b.dataset.versa)))
+  document.querySelectorAll('[data-annulla]').forEach(b =>
+    b.addEventListener('click', () => annullaVersamento(b.dataset.annulla)))
+}
+
+
+// ── Modal versamento ──────────────────────────────────────────
+function apriModalF24(periodo) {
+  const g = raggruppaRitenute(tuttiMovimenti).find(x => x.periodo === periodo)
+  if (!g) return
+
+  document.getElementById('f24-periodo').value = periodo
+  document.getElementById('f24-data').value    = new Date().toISOString().split('T')[0]
+
+  const sel = document.getElementById('f24-conto')
+  sel.innerHTML = tuttiConti.map(c => `<option value="${c.id}">${_escapeHtml(c.nome)}</option>`).join('')
+
+  document.getElementById('f24-riepilogo').innerHTML = `
+    <div class="f24-riep-riga"><span>Periodo</span><span>${_nomePeriodo(periodo)}</span></div>
+    <div class="f24-riep-riga"><span>Scadenza</span><span>${formatDate(g.scadenza)}</span></div>
+    <div class="f24-riep-riga"><span>Ritenute incluse</span><span>${g.righe.length}</span></div>
+    <div class="f24-riep-riga totale"><span>Totale ritenute</span><span>${formatEuro(g.totale)}</span></div>`
+
+  openModal('modal-f24')
+}
+
+async function salvaVersamentoF24() {
+  const periodo = document.getElementById('f24-periodo').value
+  const data    = document.getElementById('f24-data').value
+  const contoId = document.getElementById('f24-conto').value
+
+  if (!data)    { toast('Inserisci la data del versamento', 'error'); return }
+  if (!contoId) { toast('Seleziona il conto', 'error'); return }
+
+  const g = raggruppaRitenute(tuttiMovimenti).find(x => x.periodo === periodo)
+  if (!g || !g.righe.length) { toast('Nessuna ritenuta da versare', 'error'); return }
+
+  const conto = tuttiConti.find(c => c.id === contoId)
+  const ts    = firebase.firestore.Timestamp.fromDate(new Date(data + 'T00:00:00'))
+
+  try {
+    // 1. Il movimento del versamento
+    const movRef = await collections.movimenti().add({
+      tipo:        'pagamento',
+      importo:     g.totale,
+      imponibile:  g.totale,
+      iva_rate:    0,
+      iva_importo: 0,
+      righe: [{
+        descrizione: `Ritenute d'acconto ${_nomePeriodo(periodo)}`,
+        imponibile:  g.totale, iva_rate: 0, iva_importo: 0, totale: g.totale
+      }],
+      data:        ts,
+      descrizione: `Ritenute d'acconto — ${_nomePeriodo(periodo)}`,
+      categoria:   'Tasse',
+      conto:       contoId,
+      conto_nome:  conto?.nome || null,
+      note:        `${g.righe.length} ritenute versate`,
+      f24_periodo:      periodo,
+      f24_ritenute_ref: g.righe.map(m => m.id),
+      ritenuta_importo: null,
+      ritenuta_versata: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+
+    // 2. Marca le ritenute come versate — in blocco, o tutte o nessuna
+    const batch = db.batch()
+    g.righe.forEach(m => batch.update(collections.movimenti().doc(m.id), {
+      ritenuta_versata: true,
+      ritenuta_f24_ref: movRef.id
+    }))
+    await batch.commit()
+
+    closeModal('modal-f24')
+    toast(`✓ ${formatEuro(g.totale)} registrati — ${g.righe.length} ritenute segnate come versate`, 'success', 5000)
+    await caricaDati()
+
+  } catch (err) {
+    console.error('Errore versamento ritenute:', err)
+    toast('Errore durante la registrazione del versamento', 'error')
+  }
+}
+
+async function annullaVersamento(f24Id) {
+  const f24 = tuttiMovimenti.find(m => m.id === f24Id)
+  if (!f24) return
+
+  if (!confirmDelete(
+    `Annullare il versamento di ${formatEuro(f24.importo)} del ${formatDate(f24.data)}?\n\n` +
+    `Il movimento verrà eliminato e le ${f24.f24_ritenute_ref?.length || 0} ritenute torneranno da versare.`
+  )) return
+
+  try {
+    const batch = db.batch()
+    ;(f24.f24_ritenute_ref || []).forEach(id => batch.update(collections.movimenti().doc(id), {
+      ritenuta_versata: false,
+      ritenuta_f24_ref: null
+    }))
+    batch.delete(collections.movimenti().doc(f24Id))
+    await batch.commit()
+
+    toast('Versamento annullato — le ritenute sono tornate da versare', 'success', 4000)
+    await caricaDati()
+
+  } catch (err) {
+    console.error('Errore annullamento versamento:', err)
+    toast('Errore durante l\'annullamento', 'error')
+  }
 }
