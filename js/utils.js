@@ -149,6 +149,53 @@ export function todayFormatted() {
   }).format(new Date())
 }
 
+// ---- Movimenti: voci multi-aliquota ----
+
+// Arrotonda a 2 decimali. Serve perché in JS 0.1+0.2 = 0.30000000000000004:
+// sommando molte voci gli scarti si accumulano e i totali non tornano.
+export function eur(n) {
+  return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
+}
+
+/**
+ * Normalizza QUALSIASI movimento in un array di voci.
+ *
+ * Dal luglio 2026 un movimento può contenere più voci con aliquote IVA
+ * diverse (uno scontrino con 22% + 4% + 0%), salvate nel campo `righe`.
+ *
+ * I documenti salvati PRIMA non hanno quel campo: per loro sintetizziamo al
+ * volo una voce sola dai campi scalari che hanno già. Nessuna migrazione,
+ * nessuna scrittura — il documento vecchio resta com'è su Firestore.
+ *
+ * Usare SEMPRE questa funzione invece di leggere m.iva_rate direttamente:
+ * su un documento a IVA mista quel campo vale null.
+ */
+export function righeMovimento(m) {
+  if (Array.isArray(m.righe) && m.righe.length) return m.righe
+
+  const imponibile = m.imponibile != null
+    ? Number(m.imponibile)
+    : eur((Number(m.importo) || 0) - (Number(m.iva_importo) || 0))
+
+  return [{
+    descrizione: '',
+    imponibile,
+    iva_rate:    Number(m.iva_rate) || 0,
+    iva_importo: Number(m.iva_importo) || 0,
+    totale:      Number(m.importo) || 0
+  }]
+}
+
+// Aliquote effettivamente usate in un movimento, ordinate crescenti
+export function aliquoteMovimento(m) {
+  return [...new Set(
+    righeMovimento(m)
+      .filter(r => (Number(r.imponibile) || 0) > 0)
+      .map(r => Number(r.iva_rate) || 0)
+  )].sort((a, b) => a - b)
+}
+
+
 // ---- Debounce (per search) ----
 
 export function debounce(fn, ms = 300) {
