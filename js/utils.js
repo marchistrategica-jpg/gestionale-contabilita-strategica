@@ -196,6 +196,51 @@ export function aliquoteMovimento(m) {
 }
 
 
+// ---- Date ----
+
+/**
+ * Normalizza in Date qualsiasi cosa arrivi: Timestamp Firestore, stringa
+ * ISO, Date. Ritorna null se non è una data valida.
+ * Prima ogni funzione si rifaceva il suo `d?.toDate ? ... : new Date(d)`.
+ */
+export function toDate(d) {
+  if (!d) return null
+  const date = typeof d?.toDate === 'function' ? d.toDate() : new Date(d)
+  return isNaN(date) ? null : date
+}
+
+/**
+ * Scadenza per il versamento di una ritenuta d'acconto: il 16 del mese
+ * SUCCESSIVO a quello in cui è stata pagata la fattura.
+ *
+ * Nota: per legge, se il 16 cade di sabato o domenica il termine slitta al
+ * primo giorno lavorativo. Il gestionale NON applica quella regola e mostra
+ * sempre il 16 — è la data prudente, e mostrarne una più in là rischierebbe
+ * di far arrivare tardi. Questo è un timone, non un adempimento.
+ */
+export function scadenzaRitenute(dataPagamento) {
+  const d = toDate(dataPagamento)
+  if (!d) return null
+  return new Date(d.getFullYear(), d.getMonth() + 1, 16)
+}
+
+// Chiave del periodo di una ritenuta: "2026-06" dal mese di PAGAMENTO
+export function periodoRitenute(dataPagamento) {
+  const d = toDate(dataPagamento)
+  if (!d) return null
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// Giorni da oggi a una data. Negativi = passata. null se non è una data.
+export function giorniDaOggi(d) {
+  const t = toDate(d)
+  if (!t) return null
+  const oggi = new Date(); oggi.setHours(0, 0, 0, 0)
+  const target = new Date(t); target.setHours(0, 0, 0, 0)
+  return Math.round((target - oggi) / 86400000)
+}
+
+
 // ---- Debounce (per search) ----
 
 export function debounce(fn, ms = 300) {
