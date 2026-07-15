@@ -1,0 +1,252 @@
+<!-- ============================================================
+     MODULO: IVA & Conti Correnti
+     File: modules/iva.html
+     La logica è in js/modules/iva.js
+     ============================================================ -->
+
+
+
+<!-- ════════════════════════════════════════════════════════════
+     SEZIONE 1: CONTI CORRENTI
+     ════════════════════════════════════════════════════════════ -->
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+  <div>
+    <div style="font-size:16px; font-weight:800; color:var(--text0)">Conti Correnti</div>
+    <div style="font-size:11px; color:var(--text2); margin-top:2px;">Saldo = saldo iniziale + tutti i movimenti registrati</div>
+  </div>
+  <button class="btn btn-primary" id="btn-nuovo-conto">
+    <!-- Icona plus SVG inline -->
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Aggiungi Conto
+  </button>
+</div>
+
+<!-- Griglia card conti — popolata da iva.js -->
+<div id="conti-grid" style="
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+">
+  <!-- Skeleton di caricamento -->
+  <div class="loading"><div class="spinner"></div> Caricamento conti...</div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     SEZIONE 2: LIQUIDAZIONE IVA
+     ════════════════════════════════════════════════════════════ -->
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+  <div>
+    <div style="font-size:16px; font-weight:800; color:var(--text0)">Liquidazione IVA</div>
+    <div style="font-size:11px; color:var(--text2); margin-top:2px;">Riepilogo trimestrale dai movimenti registrati</div>
+  </div>
+
+  <!-- Selettori trimestre e anno -->
+  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    <select id="sel-trimestre" class="form-control" style="width:auto; padding:7px 12px; font-size:12px;">
+      <option value="1">I Trimestre (Gen–Mar)</option>
+      <option value="2">II Trimestre (Apr–Giu)</option>
+      <option value="3">III Trimestre (Lug–Set)</option>
+      <option value="4">IV Trimestre (Ott–Dic)</option>
+    </select>
+    <select id="sel-anno" class="form-control" style="width:auto; padding:7px 12px; font-size:12px;">
+      <!-- Anni popolati da iva.js -->
+    </select>
+  </div>
+</div>
+
+<!-- KPI IVA — 3 card: credito, debito, saldo -->
+<div class="kpi-grid" id="iva-kpi" style="margin-bottom:16px;">
+  <div class="loading"><div class="spinner"></div> Calcolo IVA...</div>
+</div>
+
+<!-- Tabella riepilogo per aliquota -->
+<div class="table-wrap" id="iva-tabella-wrap">
+  <div class="table-head">
+    <span class="card-title">Dettaglio per Aliquota</span>
+    <span id="iva-periodo-label" style="font-size:11px; color:var(--text2);"></span>
+  </div>
+  <div id="iva-tabella-body">
+    <div class="loading"><div class="spinner"></div></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     SEZIONE 3 — RITENUTE D'ACCONTO
+     ════════════════════════════════════════════════════════════ -->
+
+<div class="rit-sez-titolo">
+  Ritenute d'acconto
+  <span class="rit-sez-nota">versamento entro il 16 del mese successivo al pagamento</span>
+</div>
+
+<div class="kpi-grid" id="rit-kpi" style="margin-bottom:16px;"></div>
+<div id="rit-periodi"></div>
+<div id="rit-versate"></div>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL: REGISTRA VERSAMENTO RITENUTE
+     ════════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="modal-f24">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <span class="modal-title">Registra le ritenute versate</span>
+      <button class="modal-close" id="modal-f24-close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="f24-periodo">
+      <div class="f24-riepilogo" id="f24-riepilogo"></div>
+
+      <div class="form-row" style="margin-top:14px;">
+        <div class="form-group">
+          <label class="form-label">Data del versamento *</label>
+          <input type="date" class="form-control" id="f24-data">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Conto *</label>
+          <select class="form-control" id="f24-conto"></select>
+        </div>
+      </div>
+
+      <div class="f24-avvertenza">
+        Questo numero è <strong>solo la parte di ritenute d'acconto</strong>. L'F24 che
+        compili in banca può contenere anche IVA, contributi e altro: il gestionale
+        conosce solo i pagamenti che gli hai registrato.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="modal-f24-annulla">Annulla</button>
+      <button class="btn btn-primary" id="modal-f24-salva">Registra versamento</button>
+    </div>
+  </div>
+</div>
+
+
+<style>
+.rit-sez-titolo {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin: 28px 0 14px;
+  font-size: 11px; font-weight: 800; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--secondary);
+}
+.rit-sez-nota {
+  font-size: 10px; font-weight: 500; letter-spacing: 0;
+  text-transform: none; color: var(--text2);
+}
+.f24-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.f24-head.scaduto { background: var(--redD); }
+.f24-mese { font-size: 13px; font-weight: 800; color: var(--secondary); }
+.f24-scad { font-size: 11px; color: var(--text1); margin-top: 2px; }
+.f24-tot  { font-size: 19px; font-weight: 800; color: var(--text0); margin-bottom: 3px; }
+.f24-head.scaduto .f24-tot { color: var(--red); }
+.f24-azione {
+  padding: 11px 16px; border-top: 1px solid var(--border); background: var(--bg);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.f24-hint { font-size: 10.5px; color: var(--text2); }
+.f24-riepilogo {
+  padding: 12px 14px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--rs);
+}
+.f24-riep-riga {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; color: var(--text1); margin-bottom: 5px;
+}
+.f24-riep-riga span:last-child { font-weight: 700; color: var(--text0); }
+.f24-riep-riga.totale {
+  margin-top: 7px; padding-top: 8px; border-top: 2px solid var(--border);
+  font-size: 13px; font-weight: 800; color: var(--text0);
+}
+.f24-riep-riga.totale span:last-child { font-size: 18px; color: var(--primary); }
+.f24-avvertenza {
+  margin-top: 14px; padding: 9px 12px;
+  background: var(--amberD); border: 1px solid var(--amber);
+  border-radius: var(--rs); font-size: 10.5px; color: #7a5c00; line-height: 1.55;
+}
+</style>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL: AGGIUNGI / MODIFICA CONTO
+     ════════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="modal-conto">
+  <div class="modal" style="max-width:480px;">
+
+    <div class="modal-header">
+      <span class="modal-title" id="modal-conto-title">Nuovo Conto Corrente</span>
+      <button class="modal-close" id="modal-conto-close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- ID nascosto per la modifica -->
+      <input type="hidden" id="conto-id">
+
+      <div class="form-group">
+        <label class="form-label">Nome Conto *</label>
+        <input type="text" class="form-control" id="conto-nome" placeholder="es. Conto Operativo">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Banca *</label>
+        <input type="text" class="form-control" id="conto-banca" placeholder="es. Intesa Sanpaolo">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">IBAN</label>
+        <input type="text" class="form-control" id="conto-iban" placeholder="IT60 X054 2811 1010 0000 0123 456" maxlength="34">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Saldo Iniziale (€)</label>
+        <input type="number" class="form-control" id="conto-saldo" placeholder="0.00" step="0.01">
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="modal-conto-annulla">Annulla</button>
+      <button class="btn btn-primary" id="modal-conto-salva">Salva Conto</button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL: ESTRATTO CONTO (ultimi movimenti del conto)
+     ════════════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="modal-estratto">
+  <div class="modal" style="max-width:620px;">
+
+    <div class="modal-header">
+      <span class="modal-title" id="modal-estratto-title">Estratto Conto</span>
+      <button class="modal-close" id="modal-estratto-close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body" id="modal-estratto-body">
+      <!-- Popolato da iva.js -->
+    </div>
+
+  </div>
+</div>
