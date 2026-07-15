@@ -16,7 +16,8 @@ import {
   formatEuro, formatDate, toInputDate,
   toast, openModal, closeModal,
   confirmDelete, debounce,
-  eur, righeMovimento, aliquoteMovimento
+  eur, righeMovimento, aliquoteMovimento,
+  scadenzaRitenute, periodoRitenute, giorniDaOggi, toDate
 } from '../../js/utils.js'
 
 // ── Stato locale ──────────────────────────────────────────────
@@ -379,6 +380,13 @@ function _initListeners() {
   document.getElementById('mov-rata-select')
     ?.addEventListener('change', e => _onRataSelezionata(e.target.value))
 
+  // Ritenuta d'acconto
+  document.getElementById('rit-attiva')?.addEventListener('change', _ricalcolaRitenuta)
+  document.getElementById('rit-base')?.addEventListener('input', _ricalcolaRitenuta)
+  document.getElementById('rit-imp')?.addEventListener('input', _ricalcolaRitenuta)
+  document.getElementById('rit-aliq')?.addEventListener('change', _ricalcolaRitenuta)
+  document.getElementById('mov-data')?.addEventListener('change', _ricalcolaRitenuta)
+
   // Aggiungi voce al documento
   document.getElementById('btn-aggiungi-voce')
     ?.addEventListener('click', () => {
@@ -496,6 +504,9 @@ function _ricalcolaVoci() {
   set('mov-iva-display',        formatEuro(totIva))
   set('mov-totale-display',     formatEuro(_eur(totImp + totIva)))
 
+  // Il netto della ritenuta dipende dal totale: si ricalcola insieme
+  _ricalcolaRitenuta()
+
   // Avviso "IVA mista" quando le aliquote sono più di una
   const mix = document.getElementById('mov-iva-mix')
   if (mix) {
@@ -541,6 +552,151 @@ function _leggiVoci() {
 
   if (!voci.length) return { errore: 'Inserisci almeno una voce con un imponibile' }
   return { voci }
+}
+
+
+// ============================================================
+// RITENUTA D'ACCONTO
+//
+// Esiste solo sui PAGAMENTI: i clienti di Strategica non trattengono
+// ritenute sugli incassi, quindi sul tipo "incasso" il blocco non compare.
+//
+// Effetto sul documento: `importo` non è più "imponibile + IVA" ma
+// "imponibile + IVA − ritenuta", cioè i soldi realmente usciti dal conto.
+// La ritenuta resta a debito finché non viene versata con l'F24.
+// ============================================================
+
+// Se la ritenuta è già stata versata, i campi si bloccano: modificarli
+// sfalserebbe un F24 già registrato.
+let _ritenutaVersata = false
+
+function _aggiornaVisibilitaRitenuta() {
+  const tipo = document.getElementById('mov-tipo')?.value
+  const box  = document.getElementById('rit-box')
+  if (box) box.style.display = tipo === 'pagamento' ? '' : 'none'
+}
+
+function _ricalcolaRitenuta() {
+  const attivaEl = document.getElementById('rit-attiva')
+  const campi    = document.getElementById('rit-campi')
+  if (!attivaEl || !campi) return
+
+  campi.style.display = attivaEl.checked ? '' : 'none'
+
+  // Totale documento: ricalcolato dalle voci, mai riletto dal display
+  const righe = [...document.querySelectorAll('#voci-container .voce-row')]
+  let totImp = 0, totIva = 0
+  righe.forEach(r => {
+    const imp  = parseFloat(r.querySelector('.voce-imp').value) || 0
+    const rate = parseFloat(r.querySelector('.voce-iva').value) || 0
+    totImp += imp
+    totIva += _eur(imp * rate / 100)
+  })
+  const totale = _eur(_eur(totImp) + _eur(totIva))
+
+  const base = parseFloat(document.getElementById('rit-base').value) || 0
+  const sel  = document.getElementById('rit-aliq').value
+  const inpR = document.getElementById('rit-imp')
+
+  let rit
+  if (sel === 'manuale') {
+    rit = parseFloat(inpR.value) || 0
+  } else {
+    rit = _eur(base * parseFloat(sel) / 100)
+    if (!_ritenutaVersata) inpR.value = rit.toFixed(2)
+  }
+
+  const tipo = document.getElementById('mov-tipo')?.value
+  if (!attivaEl.checked || tipo !== 'pagamento') rit = 0
+
+  const netto = _eur(totale - rit)
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v }
+  set('rc-tot',   formatEuro(totale))
+  set('rc-rit',   formatEuro(rit))
+  set('rc-netto', formatEuro(netto))
+
+  // Scadenza: il 16 del mese successivo al pagamento
+  const dataStr = document.getElementById('mov-data').value
+  const scad    = dataStr ? scadenzaRitenute(dataStr) : null
+  const box     = document.getElementById('rc-f24')
+  if (box) {
+    const mostra = attivaEl.checked && rit > 0 && scad
+    box.style.display = mostra ? '' : 'none'
+    if (mostra) {
+      const g = giorniDaOggi(scad)
+      box.innerHTML = `Ritenuta da versare con <strong>F24 entro il ${formatDate(scad)}</strong>` +
+        (g === null ? '' : g < 0 ? ` — <strong>scaduto da ${Math.abs(g)} giorni</strong>`
+                        : g === 0 ? ' — <strong>scade oggi</strong>'
+                        : ` — tra ${g} giorni`)
+    }
+  }
+}
+
+/** Legge la ritenuta dal form. Ritorna null se non c'è o non si applica. */
+function _leggiRitenuta() {
+  const tipo = document.getElementById('mov-tipo')?.value
+  if (tipo !== 'pagamento') return null
+
+  const attiva = document.getElementById('rit-attiva')?.checked
+  if (!attiva) return null
+
+  const importo = _eur(parseFloat(document.getElementById('rit-imp').value) || 0)
+  if (importo <= 0) return null
+
+  const sel = document.getElementById('rit-aliq').value
+  return {
+    base:     _eur(parseFloat(document.getElementById('rit-base').value) || 0),
+    aliquota: sel === 'manuale' ? null : parseFloat(sel),
+    importo
+  }
+}
+
+/** Ripopola il blocco ritenuta aprendo un movimento esistente. */
+function _caricaRitenuta(m) {
+  _ritenutaVersata = m?.ritenuta_versata === true
+
+  const attiva = document.getElementById('rit-attiva')
+  const haRit  = Number(m?.ritenuta_importo) > 0
+
+  attiva.checked = haRit
+  attiva.disabled = _ritenutaVersata
+
+  document.getElementById('rit-base').value = m?.ritenuta_base ?? ''
+  document.getElementById('rit-imp').value  = haRit ? Number(m.ritenuta_importo).toFixed(2) : ''
+  document.getElementById('rit-aliq').value =
+    m?.ritenuta_aliquota != null ? String(m.ritenuta_aliquota) : 'manuale'
+
+  // Campi bloccati se un F24 ha già versato questa ritenuta
+  ;['rit-base', 'rit-imp'].forEach(id => {
+    document.getElementById(id).readOnly = _ritenutaVersata
+  })
+  document.getElementById('rit-aliq').disabled = _ritenutaVersata
+
+  const avviso = document.getElementById('rit-bloccata')
+  if (avviso) {
+    avviso.style.display = _ritenutaVersata ? '' : 'none'
+    avviso.innerHTML = _ritenutaVersata
+      ? `<strong>Ritenuta già versata con un F24.</strong> Non si può più modificare:
+         cambiarla sfalserebbe un versamento già registrato. Per correggerla, annulla
+         prima il versamento da IVA &amp; Conti correnti.`
+      : ''
+  }
+}
+
+/** Azzera il blocco ritenuta per un movimento nuovo. */
+function _resetRitenuta() {
+  _ritenutaVersata = false
+  const attiva = document.getElementById('rit-attiva')
+  if (attiva) { attiva.checked = false; attiva.disabled = false }
+  ;['rit-base', 'rit-imp'].forEach(id => {
+    const el = document.getElementById(id)
+    if (el) { el.value = ''; el.readOnly = false }
+  })
+  const aliq = document.getElementById('rit-aliq')
+  if (aliq) { aliq.value = '20'; aliq.disabled = false }
+  const avviso = document.getElementById('rit-bloccata')
+  if (avviso) avviso.style.display = 'none'
 }
 
 
@@ -677,6 +833,17 @@ async function _salvaMovimento() {
   const totIva        = _eur(voci.reduce((s, v) => s + v.iva_importo, 0))
   const totale        = _eur(totImponibile + totIva)
 
+  // ⚠️ RITENUTA — da qui in poi `importo` NON è più "imponibile + IVA".
+  // È il netto: i soldi realmente usciti dal conto. La differenza resta a
+  // debito verso lo Stato finché non la versi con l'F24.
+  const rit   = _leggiRitenuta()
+  const netto = _eur(totale - (rit?.importo || 0))
+
+  if (rit && rit.importo >= totale) {
+    toast('La ritenuta non può essere pari o superiore al totale della fattura', 'error')
+    return
+  }
+
   // Se tutte le voci hanno la stessa aliquota, la teniamo anche a livello
   // documento: così un movimento a voce singola resta IDENTICO nella forma a
   // quelli salvati finora, e tutto il resto del gestionale continua a leggerlo
@@ -690,11 +857,16 @@ async function _salvaMovimento() {
 
   const dati = {
     tipo,
-    importo:        totale,          // IVA inclusa — è quello che scala dal conto
-    imponibile:     totImponibile,
-    iva_importo:    totIva,
+    importo:        netto,           // NETTO pagato — è questo che scala dal conto
+    imponibile:     totImponibile,   // dalla fattura
+    iva_importo:    totIva,          // dalla fattura
     iva_rate:       ivaUnica,
     righe:          voci,
+
+    // Ritenuta: null quando non c'è, così il campo è sempre interrogabile
+    ritenuta_base:     rit?.base ?? null,
+    ritenuta_aliquota: rit?.aliquota ?? null,
+    ritenuta_importo:  rit?.importo ?? null,
     data:           toTimestamp(data),
     descrizione,
     numero_fattura: numeroFatt || null,
@@ -708,9 +880,20 @@ async function _salvaMovimento() {
 
   try {
     if (id) {
-      await collections.movimenti().doc(id).update(dati)
-      toast('Movimento aggiornato', 'success')
+      // ⚠️ Se la ritenuta è già stata versata con un F24, `dati` NON deve
+      // toccarla: riscriverla sfalserebbe un versamento già registrato.
+      // Stessa precauzione delle rate già pagate in contratti.js.
+      if (_ritenutaVersata) {
+        const { ritenuta_base, ritenuta_aliquota, ritenuta_importo, importo, ...senzaRitenuta } = dati
+        await collections.movimenti().doc(id).update(senzaRitenuta)
+        toast('Movimento aggiornato — la ritenuta già versata non è stata toccata', 'success', 5000)
+      } else {
+        await collections.movimenti().doc(id).update(dati)
+        toast('Movimento aggiornato', 'success')
+      }
     } else {
+      dati.ritenuta_versata  = false
+      dati.ritenuta_f24_ref  = null
       dati.createdAt = FieldValue.serverTimestamp()
       await collections.movimenti().add(dati)
       toast('Movimento salvato', 'success')
@@ -785,6 +968,7 @@ function _apriModalNuovo() {
   // Si parte sempre con una voce pronta da compilare
   _svuotaVoci()
   _aggiungiVoce()
+  _resetRitenuta()
 
   // Reset rata
   const sel = document.getElementById('mov-rata-select')
@@ -824,6 +1008,11 @@ function _apriModalModifica(m) {
   _svuotaVoci()
   _righeDi(m).forEach(r => _aggiungiVoce(r))
 
+  // ⚠️ Stessa forma del bug C1: se la ritenuta non viene ricaricata qui,
+  // il salvataggio successivo ricalcola importo = imponibile + IVA senza
+  // sottrarla, e il movimento si gonfia dell'importo della ritenuta.
+  _caricaRitenuta(m)
+
   _impostaTipoModal(m.tipo)
 
   // Carica rate del contratto se presente
@@ -845,10 +1034,13 @@ function _apriModalModifica(m) {
 }
 
 function _impostaTipoModal(tipo) {
+  // La ritenuta esiste solo sui pagamenti: i clienti non ne trattengono
   document.getElementById('mov-tipo').value = tipo
   document.querySelectorAll('.tipo-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.val === tipo)
   })
+  _aggiornaVisibilitaRitenuta()
+  _ricalcolaRitenuta()
 }
 
 
