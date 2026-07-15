@@ -54,6 +54,12 @@ export const THEME = {
       section: null
     },
     {
+      id:      'clienti',
+      label:   'Clienti',
+      icon:    'client',
+      section: 'Gestione'
+    },
+    {
       id:      'contratti',
       label:   'Contratti',
       icon:    'contract',
