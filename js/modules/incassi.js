@@ -11,11 +11,12 @@
 //   - Conto: ora è una select dai conti registrati in Firestore
 // ============================================================
 
-import { db, collections, toTimestamp, FieldValue } from '../../js/firebase-config.js'
+import { collections, toTimestamp, FieldValue } from '../../js/firebase-config.js'
 import {
   formatEuro, formatDate, toInputDate,
-  toast, openModal, closeModal, initModalClose,
-  confirmDelete, debounce
+  toast, openModal, closeModal,
+  confirmDelete, debounce,
+  eur, righeMovimento, aliquoteMovimento
 } from '../../js/utils.js'
 
 // ── Stato locale ──────────────────────────────────────────────
@@ -29,6 +30,28 @@ let filtroTipo  = 'tutti'
 let cercaTesto  = ''
 let meseAttivo  = 0
 let annoAttivo  = 0
+
+
+// ── ALIQUOTE IVA ─────────────────────────────────────────────
+const ALIQUOTE_IVA = [
+  { v: 0,  l: '0% — esente' },
+  { v: 4,  l: '4%' },
+  { v: 5,  l: '5%' },
+  { v: 10, l: '10%' },
+  { v: 22, l: '22%' },
+]
+
+// Alias locali sulle funzioni condivise di utils.js
+const _eur       = eur
+const _righeDi   = righeMovimento
+const _aliquoteDi = aliquoteMovimento
+
+// Numero in formato italiano per i campi readonly (12.345,67)
+function _fmt(n) {
+  return new Intl.NumberFormat('it-IT', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  }).format(Number(n) || 0)
+}
 
 
 // ============================================================
@@ -158,7 +181,10 @@ function _applicaFiltri() {
     if (filtroTipo !== 'tutti' && m.tipo !== filtroTipo) return false
     if (cercaTesto) {
       const q = cercaTesto.toLowerCase()
-      const h = [m.descrizione, m.categoria, m.conto, m.note].join(' ').toLowerCase()
+      const h = [
+        m.descrizione, m.categoria, m.conto, m.note, m.numero_fattura,
+        ..._righeDi(m).map(r => r.descrizione || '')
+      ].join(' ').toLowerCase()
       if (!h.includes(q)) return false
     }
     return true
@@ -197,20 +223,28 @@ function _renderTabella() {
       ? '<span class="badge badge-green">Incasso</span>'
       : '<span class="badge badge-red">Pagamento</span>'
 
-    // Indica se il movimento è collegato a una rata
-    const rataTag = m.rata_ref
-      ? `<span style="font-size:9px;font-weight:700;color:var(--secondary);letter-spacing:.06em;">↳ RATA</span>`
-      : ''
+    // Riga secondaria sotto la descrizione: rata, n° fattura, note
+    const dettagli = []
+    if (m.rata_ref) dettagli.push(`<span style="font-weight:700;color:var(--secondary);letter-spacing:.06em;">↳ RATA</span>`)
+    if (m.numero_fattura) dettagli.push(`<span style="font-weight:700;color:var(--secondary);">${_esc(m.numero_fattura)}</span>`)
+    if (m.note) dettagli.push(_esc(m.note))
+    const sottoRiga = dettagli.join(' · ')
+
+    // Aliquote: una sola → "22%", più di una → "4% + 22%"
+    const aliq = _aliquoteDi(m)
+    const ivaCell = !aliq.length ? '—'
+      : aliq.length === 1 ? `${aliq[0]}%`
+      : `<span style="font-weight:700;color:var(--secondary);cursor:help;" title="Documento con IVA mista">${aliq.join('% + ')}%</span>`
 
     return `<tr data-id="${m.id}">
       <td class="font-mono" style="font-size:12px;">${formatDate(m.data)}</td>
       <td style="max-width:240px;">
         <div style="font-weight:600;color:var(--text0);">${_esc(m.descrizione || '—')}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px;">${rataTag}${m.note ? _esc(m.note) : ''}</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px;">${sottoRiga}</div>
       </td>
       <td><span class="badge badge-blue">${_esc(m.categoria || '—')}</span></td>
-      <td style="font-size:12px;">${_nomeConto(m.conto)}</td>
-      <td class="text-center" style="font-size:12px;">${m.iva_rate ? m.iva_rate + '%' : '—'}</td>
+      <td style="font-size:12px;">${_esc(_nomeConto(m.conto))}</td>
+      <td class="text-center" style="font-size:12px;">${ivaCell}</td>
       <td class="text-right ${colore}">${segno} ${formatEuro(m.importo)}</td>
       <td class="text-right" style="white-space:nowrap;">
         <button class="btn btn-icon btn-sm btn-modifica" data-id="${m.id}" title="Modifica">
@@ -253,10 +287,12 @@ function _renderTabella() {
   _agganciaAzioniTabella()
 }
 
+// Restituisce il nome GREZZO del conto. L'escape si fa a valle, solo dove il
+// valore finisce dentro HTML — nel CSV serve il testo vero.
 function _nomeConto(contoRef) {
   if (!contoRef) return '—'
   const c = tuttiConti.find(x => x.id === contoRef || x.nome === contoRef)
-  return c ? _esc(c.nome) : _esc(contoRef)
+  return c ? c.nome : contoRef
 }
 
 
@@ -282,10 +318,11 @@ async function _aggiornaKPI() {
   } catch (e) { /* silenzioso */ }
 
   const el = id => document.getElementById(id)
+  const plur = n => `${n} moviment${n === 1 ? 'o' : 'i'}`
   if (el('kpi-incassi-mese'))      el('kpi-incassi-mese').textContent      = formatEuro(incassiMese)
-  if (el('kpi-incassi-mese-sub'))  el('kpi-incassi-mese-sub').textContent  = `${nInc} movimento${nInc !== 1 ? 'i' : ''}`
+  if (el('kpi-incassi-mese-sub'))  el('kpi-incassi-mese-sub').textContent  = plur(nInc)
   if (el('kpi-pagamenti-mese'))    el('kpi-pagamenti-mese').textContent    = formatEuro(pagamentiMese)
-  if (el('kpi-pagamenti-mese-sub'))el('kpi-pagamenti-mese-sub').textContent= `${nPag} movimento${nPag !== 1 ? 'i' : ''}`
+  if (el('kpi-pagamenti-mese-sub'))el('kpi-pagamenti-mese-sub').textContent= plur(nPag)
   const saldo = incassiMese - pagamentiMese
   const kpiS = el('kpi-saldo-netto')
   if (kpiS) { kpiS.textContent = formatEuro(saldo); kpiS.style.color = saldo >= 0 ? 'var(--green)' : 'var(--red)' }
@@ -342,19 +379,12 @@ function _initListeners() {
   document.getElementById('mov-rata-select')
     ?.addEventListener('change', e => _onRataSelezionata(e.target.value))
 
-  // Calcolo IVA
-  const calcIVA = () => {
-    const imp    = parseFloat(document.getElementById('mov-importo').value) || 0
-    const al     = parseFloat(document.getElementById('mov-iva-rate').value) || 0
-    const iva    = imp * al / 100
-    const totale = imp + iva
-    document.getElementById('mov-iva-display').textContent = formatEuro(iva)
-    // Mostra totale IVA inclusa
-    const elTot = document.getElementById('mov-totale-display')
-    if (elTot) elTot.textContent = formatEuro(totale)
-  }
-  document.getElementById('mov-importo').addEventListener('input', calcIVA)
-  document.getElementById('mov-iva-rate').addEventListener('change', calcIVA)
+  // Aggiungi voce al documento
+  document.getElementById('btn-aggiungi-voce')
+    ?.addEventListener('click', () => {
+      const riga = _aggiungiVoce()
+      riga?.querySelector('.voce-desc')?.focus()
+    })
 
   // Salva / Annulla / Close
   document.getElementById('btn-salva').addEventListener('click', _salvaMovimento)
@@ -377,6 +407,140 @@ function _agganciaAzioniTabella() {
       if (confirmDelete('Eliminare questo movimento?')) await _eliminaMovimento(btn.dataset.id)
     })
   })
+}
+
+
+// ============================================================
+// VOCI DEL DOCUMENTO — righe multi-aliquota nel modal
+// ============================================================
+
+function _svuotaVoci() {
+  const c = document.getElementById('voci-container')
+  if (c) c.innerHTML = ''
+  _ricalcolaVoci()
+}
+
+function _aggiungiVoce(dati = {}) {
+  const container = document.getElementById('voci-container')
+  if (!container) return null
+
+  const riga = document.createElement('div')
+  riga.className = 'voce-row'
+
+  const rataSel = dati.iva_rate ?? 22
+  const opzioni = ALIQUOTE_IVA.map(a =>
+    `<option value="${a.v}" ${Number(a.v) === Number(rataSel) ? 'selected' : ''}>${a.l}</option>`
+  ).join('')
+
+  riga.innerHTML = `
+    <input type="text" class="voce-desc" placeholder="es. Materiale" value="${_esc(dati.descrizione || '')}">
+    <input type="number" class="voce-imp" placeholder="0.00" min="0" step="0.01" value="${dati.imponibile ?? ''}">
+    <select class="voce-iva">${opzioni}</select>
+    <input type="text" class="voce-ivaimp" readonly value="—" tabindex="-1">
+    <input type="text" class="voce-tot" readonly value="—" tabindex="-1">
+    <button type="button" class="btn-voce-remove" title="Rimuovi voce">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  `
+
+  riga.querySelector('.voce-imp').addEventListener('input',  _ricalcolaVoci)
+  riga.querySelector('.voce-iva').addEventListener('change', _ricalcolaVoci)
+  riga.querySelector('.btn-voce-remove').addEventListener('click', () => {
+    riga.remove()
+    _ricalcolaVoci()
+  })
+
+  container.appendChild(riga)
+  _ricalcolaVoci()
+  return riga
+}
+
+/**
+ * Ricalcola IVA e totali di ogni voce e del documento.
+ *
+ * Nota: i totali si ricalcolano SEMPRE da imponibile + aliquota, mai
+ * rileggendo i campi readonly. Quelli contengono numeri formattati
+ * all'italiana ("1.234,56") e riparsarli è una fonte di bug.
+ */
+function _ricalcolaVoci() {
+  const righe = [...document.querySelectorAll('#voci-container .voce-row')]
+  const hint  = document.getElementById('voci-hint')
+  const head  = document.getElementById('voce-header')
+
+  if (hint) hint.style.display = righe.length ? 'none' : 'block'
+  if (head) head.style.display = righe.length ? '' : 'none'
+
+  let totImp = 0
+  let totIva = 0
+  const aliquote = new Set()
+
+  righe.forEach(r => {
+    const imp  = parseFloat(r.querySelector('.voce-imp').value) || 0
+    const rate = parseFloat(r.querySelector('.voce-iva').value) || 0
+    const iva  = _eur(imp * rate / 100)
+    const tot  = _eur(imp + iva)
+
+    r.querySelector('.voce-ivaimp').value = imp > 0 ? _fmt(iva) : '—'
+    r.querySelector('.voce-tot').value    = imp > 0 ? _fmt(tot) : '—'
+
+    totImp += imp
+    totIva += iva
+    if (imp > 0) aliquote.add(rate)
+  })
+
+  totImp = _eur(totImp)
+  totIva = _eur(totIva)
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v }
+  set('mov-imponibile-display', formatEuro(totImp))
+  set('mov-iva-display',        formatEuro(totIva))
+  set('mov-totale-display',     formatEuro(_eur(totImp + totIva)))
+
+  // Avviso "IVA mista" quando le aliquote sono più di una
+  const mix = document.getElementById('mov-iva-mix')
+  if (mix) {
+    const lista = [...aliquote].sort((a, b) => a - b)
+    if (lista.length > 1) {
+      mix.style.display = 'block'
+      mix.textContent = `Documento con IVA mista: ${lista.join('% + ')}%`
+    } else {
+      mix.style.display = 'none'
+    }
+  }
+}
+
+/**
+ * Legge le voci dal form per il salvataggio.
+ * Ritorna { voci } oppure { errore }.
+ */
+function _leggiVoci() {
+  const righe = [...document.querySelectorAll('#voci-container .voce-row')]
+  const voci  = []
+
+  for (const r of righe) {
+    const desc = r.querySelector('.voce-desc').value.trim()
+    const imp  = parseFloat(r.querySelector('.voce-imp').value)
+    const rate = parseFloat(r.querySelector('.voce-iva').value) || 0
+
+    // Riga lasciata completamente vuota: si ignora invece di bloccare
+    if (!desc && (isNaN(imp) || imp === 0)) continue
+
+    if (isNaN(imp) || imp <= 0) {
+      return { errore: 'Ogni voce deve avere un imponibile maggiore di zero' }
+    }
+
+    const iva = _eur(imp * rate / 100)
+    voci.push({
+      descrizione: desc || null,
+      imponibile:  _eur(imp),
+      iva_rate:    rate,
+      iva_importo: iva,
+      totale:      _eur(imp + iva)
+    })
+  }
+
+  if (!voci.length) return { errore: 'Inserisci almeno una voce con un imponibile' }
+  return { voci }
 }
 
 
@@ -437,9 +601,18 @@ function _onRataSelezionata(rataId) {
   const r = tutteRate.find(x => x.id === rataId)
   if (!r) return
 
-  // Auto-fill campi del movimento
-  document.getElementById('mov-importo').value     = r.importo_totale ?? ''
-  document.getElementById('mov-iva-rate').value    = r.iva_rate ?? 22
+  // ⚠️ FIX C1 — secondo punto del bug.
+  // Prima: nel campo "Imponibile" finiva `r.importo_totale` (IVA inclusa),
+  // e al salvataggio l'IVA veniva riapplicata. Risultato: registrare la stessa
+  // rata da qui o da Contratti produceva importi diversi.
+  // Ora la voce si compila con l'imponibile della rata.
+  _svuotaVoci()
+  _aggiungiVoce({
+    descrizione: r.descrizione || '',
+    imponibile:  r.importo_imponibile ?? 0,
+    iva_rate:    r.iva_rate ?? 22
+  })
+
   document.getElementById('mov-descrizione').value = `${r.descrizione || 'Rata'} — ${r.cliente || ''}`
   document.getElementById('mov-categoria').value   = 'Contratto'
 
@@ -464,9 +637,7 @@ function _onRataSelezionata(rataId) {
     }
   }
 
-  // Aggiorna display IVA
-  const iva = (r.importo_totale || 0) * (r.iva_rate || 0) / 100
-  document.getElementById('mov-iva-display').textContent = formatEuro(iva)
+  // I totali li ha già ricalcolati _aggiungiVoce()
 
   // Mostra info rata
   if (info) {
@@ -488,9 +659,8 @@ async function _salvaMovimento() {
   const tipo        = document.getElementById('mov-tipo').value
   const data        = document.getElementById('mov-data').value
   const descrizione = document.getElementById('mov-descrizione').value.trim()
+  const numeroFatt  = document.getElementById('mov-numero-fattura').value.trim()
   const categoria   = document.getElementById('mov-categoria').value
-  const importo     = parseFloat(document.getElementById('mov-importo').value) || 0
-  const ivaRate     = parseFloat(document.getElementById('mov-iva-rate').value) || 0
   const contoRef    = document.getElementById('mov-conto').value
   const contrattoRef= document.getElementById('mov-contratto-ref').value
   const rataRef     = document.getElementById('mov-rata-ref').value
@@ -499,26 +669,41 @@ async function _salvaMovimento() {
   if (!data)        { toast('Inserisci la data', 'error'); return }
   if (!descrizione) { toast('Inserisci la descrizione', 'error'); return }
   if (!categoria)   { toast('Seleziona la categoria', 'error'); return }
-  if (!importo || importo <= 0) { toast('Inserisci un importo valido', 'error'); return }
 
-  const ivaImporto  = importo * (ivaRate / 100)
-  const importoTotale = importo + ivaImporto  // totale IVA inclusa — scalato dal conto
-  // Trova nome conto per compatibilità
-  const contoObj   = tuttiConti.find(c => c.id === contoRef)
-  const contoNome  = contoObj?.nome || contoRef || null
+  const { voci, errore } = _leggiVoci()
+  if (errore) { toast(errore, 'error'); return }
+
+  const totImponibile = _eur(voci.reduce((s, v) => s + v.imponibile,  0))
+  const totIva        = _eur(voci.reduce((s, v) => s + v.iva_importo, 0))
+  const totale        = _eur(totImponibile + totIva)
+
+  // Se tutte le voci hanno la stessa aliquota, la teniamo anche a livello
+  // documento: così un movimento a voce singola resta IDENTICO nella forma a
+  // quelli salvati finora, e tutto il resto del gestionale continua a leggerlo
+  // senza sapere nulla di `righe`. Con aliquote miste diventa null, perché un
+  // documento 22%+4% non ha "una" aliquota: chi la vuole legge `righe`.
+  const aliquote = [...new Set(voci.map(v => v.iva_rate))]
+  const ivaUnica = aliquote.length === 1 ? aliquote[0] : null
+
+  const contoObj  = tuttiConti.find(c => c.id === contoRef)
+  const contoNome = contoObj?.nome || contoRef || null
 
   const dati = {
-    tipo, importo: importoTotale,
-    imponibile:    importo,        // salva anche l'imponibile per riferimento
-    data:          toTimestamp(data),
-    descrizione, categoria,
-    conto:         contoRef || null,
-    conto_nome:    contoNome,
-    iva_rate:      ivaRate,
-    iva_importo:   ivaImporto,
-    contratto_ref: contrattoRef || null,
-    rata_ref:      rataRef || null,
-    note:          note || null
+    tipo,
+    importo:        totale,          // IVA inclusa — è quello che scala dal conto
+    imponibile:     totImponibile,
+    iva_importo:    totIva,
+    iva_rate:       ivaUnica,
+    righe:          voci,
+    data:           toTimestamp(data),
+    descrizione,
+    numero_fattura: numeroFatt || null,
+    categoria,
+    conto:          contoRef || null,
+    conto_nome:     contoNome,
+    contratto_ref:  contrattoRef || null,
+    rata_ref:       rataRef || null,
+    note:           note || null
   }
 
   try {
@@ -591,13 +776,16 @@ function _apriModalNuovo() {
   document.getElementById('mov-rata-ref').value        = ''
   document.getElementById('mov-data').value            = new Date().toISOString().split('T')[0]
   document.getElementById('mov-descrizione').value     = ''
+  document.getElementById('mov-numero-fattura').value  = ''
   document.getElementById('mov-categoria').value       = ''
-  document.getElementById('mov-importo').value         = ''
-  document.getElementById('mov-iva-rate').value        = '22'
-  document.getElementById('mov-iva-display').textContent = formatEuro(0)
   document.getElementById('mov-conto').value           = ''
   document.getElementById('mov-contratto-ref').value   = ''
   document.getElementById('mov-note').value            = ''
+
+  // Si parte sempre con una voce pronta da compilare
+  _svuotaVoci()
+  _aggiungiVoce()
+
   // Reset rata
   const sel = document.getElementById('mov-rata-select')
   if (sel) sel.innerHTML = '<option value="">— Seleziona rata (opzionale) —</option>'
@@ -621,14 +809,20 @@ function _apriModalModifica(m) {
   document.getElementById('mov-id').value              = m.id
   document.getElementById('mov-rata-ref').value        = m.rata_ref || ''
   document.getElementById('mov-data').value            = toInputDate(m.data)
-  document.getElementById('mov-descrizione').value     = m.descrizione  || ''
-  document.getElementById('mov-categoria').value       = m.categoria    || ''
-  document.getElementById('mov-importo').value         = m.importo      || ''
-  document.getElementById('mov-iva-rate').value        = m.iva_rate     || 0
-  document.getElementById('mov-iva-display').textContent = formatEuro(m.iva_importo || 0)
-  document.getElementById('mov-conto').value           = m.conto        || ''
-  document.getElementById('mov-contratto-ref').value   = m.contratto_ref|| ''
-  document.getElementById('mov-note').value            = m.note         || ''
+  document.getElementById('mov-descrizione').value     = m.descrizione    || ''
+  document.getElementById('mov-numero-fattura').value  = m.numero_fattura || ''
+  document.getElementById('mov-categoria').value       = m.categoria      || ''
+  document.getElementById('mov-conto').value           = m.conto          || ''
+  document.getElementById('mov-contratto-ref').value   = m.contratto_ref  || ''
+  document.getElementById('mov-note').value            = m.note           || ''
+
+  // ⚠️ FIX C1 — qui viveva il bug.
+  // Prima: il campo "Imponibile" veniva riempito con `m.importo`, che è il
+  // totale IVA INCLUSA. Al salvataggio l'IVA veniva riapplicata sopra, quindi
+  // ogni apertura+salvataggio gonfiava il movimento del 22%.
+  // Ora le voci si ricostruiscono partendo dall'imponibile vero.
+  _svuotaVoci()
+  _righeDi(m).forEach(r => _aggiungiVoce(r))
 
   _impostaTipoModal(m.tipo)
 
@@ -671,11 +865,13 @@ async function _apriModalPrecompilato(dati) {
   document.getElementById('mov-rata-ref').value        = dati.rata_ref || ''
   document.getElementById('mov-data').value            = dati.data || new Date().toISOString().split('T')[0]
   document.getElementById('mov-descrizione').value     = dati.descrizione || ''
+  document.getElementById('mov-numero-fattura').value  = dati.numero_fattura || ''
   document.getElementById('mov-categoria').value       = dati.categoria  || 'Contratto'
-  document.getElementById('mov-importo').value         = dati.importo    || ''
-  document.getElementById('mov-iva-rate').value        = dati.iva_rate   || 22
-  document.getElementById('mov-iva-display').textContent = formatEuro((dati.importo || 0) * (dati.iva_rate || 0) / 100)
   document.getElementById('mov-note').value            = ''
+
+  // `dati.importo` qui è sempre un IMPONIBILE (vedi fix C1)
+  _svuotaVoci()
+  _aggiungiVoce({ imponibile: dati.importo ?? '', iva_rate: dati.iva_rate ?? 22 })
 
   // Seleziona contratto e carica le rate
   const selCont = document.getElementById('mov-contratto-ref')
@@ -735,15 +931,38 @@ async function _apriModalPrecompilato(dati) {
 // ============================================================
 function _esportaCSV() {
   if (!movimentiFiltrati.length) { toast('Nessun dato da esportare', 'info'); return }
-  const header = ['Data','Tipo','Descrizione','Categoria','Conto','IVA %','Importo','IVA','Note']
-  const righe  = movimentiFiltrati.map(m => [
-    formatDate(m.data), m.tipo || '',
-    `"${(m.descrizione || '').replace(/"/g,'""')}"`,
-    m.categoria || '', _nomeConto(m.conto), m.iva_rate || 0,
-    (m.importo || 0).toFixed(2).replace('.', ','),
-    (m.iva_importo || 0).toFixed(2).replace('.', ','),
-    `"${(m.note || '').replace(/"/g,'""')}"`
-  ])
+
+  // Neutralizza la CSV injection: una descrizione che inizia con = + - @
+  // verrebbe interpretata da Excel come formula.
+  const cella = v => {
+    let s = String(v ?? '')
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
+    return `"${s.replace(/"/g, '""')}"`
+  }
+  const num = n => (Number(n) || 0).toFixed(2).replace('.', ',')
+
+  const header = ['Data','Tipo','N° fattura','Descrizione','Categoria','Conto',
+                  'Aliquote IVA','Imponibile','IVA','Totale','Note']
+
+  const righe = movimentiFiltrati.map(m => {
+    const aliq = _aliquoteDi(m)
+    const imponibile = m.imponibile != null
+      ? m.imponibile
+      : _righeDi(m).reduce((s, r) => s + (Number(r.imponibile) || 0), 0)
+    return [
+      cella(formatDate(m.data)),
+      cella(m.tipo || ''),
+      cella(m.numero_fattura || ''),
+      cella(m.descrizione || ''),
+      cella(m.categoria || ''),
+      cella(_nomeConto(m.conto)),
+      cella(aliq.length ? aliq.map(a => a + '%').join(' + ') : ''),
+      num(imponibile),
+      num(m.iva_importo),
+      num(m.importo),
+      cella(m.note || '')
+    ]
+  })
   const csv  = [header, ...righe].map(r => r.join(';')).join('\n')
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
@@ -775,6 +994,13 @@ function _toDate(val) {
   const d = new Date(val); return isNaN(d) ? null : d
 }
 
+// Le virgolette servono perché _esc ora finisce anche dentro attributi HTML
+// (value="..." delle voci): senza, una descrizione con " spezza il markup.
 function _esc(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
