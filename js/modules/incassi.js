@@ -366,6 +366,11 @@ function _initListeners() {
       btn.classList.add('active')
       document.getElementById('mov-tipo').value = btn.dataset.val
       _aggiornaSectionRata()
+      // La ritenuta esiste solo sui pagamenti: cambiando tipo il blocco
+      // deve comparire o sparire. Senza queste due righe resta invisibile
+      // per sempre, perché nasce con display:none.
+      _aggiornaVisibilitaRitenuta()
+      _ricalcolaRitenuta()
     })
   })
 
