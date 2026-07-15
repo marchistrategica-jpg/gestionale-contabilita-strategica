@@ -1,0 +1,131 @@
+<!-- ============================================================
+     MODULO: Clienti — scheda per cliente
+     Sola lettura: aggrega contratti, rate e movimenti già esistenti.
+     ============================================================ -->
+
+<!-- ── Ricerca ────────────────────────────────────────────────── -->
+<div class="cli-cerca">
+  <div class="search-box" style="width:100%;max-width:420px;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" id="cli-input" placeholder="Scrivi il nome di un cliente..." autocomplete="off">
+  </div>
+  <div class="cli-conta" id="cli-conta"></div>
+  <button class="btn btn-secondary btn-sm" id="cli-aggiorna" style="margin-left:auto;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    Aggiorna
+  </button>
+</div>
+
+<!-- ── Caricamento ────────────────────────────────────────────── -->
+<div id="cli-loading" class="loading">
+  <div class="spinner"></div>
+  Caricamento clienti...
+</div>
+
+<!-- ── Contenuto ──────────────────────────────────────────────── -->
+<div class="cli-layout" id="cli-layout" style="display:none;">
+
+  <!-- Elenco a sinistra -->
+  <div class="cli-lista" id="cli-lista"></div>
+
+  <!-- Scheda a destra -->
+  <div id="cli-scheda"></div>
+
+</div>
+
+
+<style>
+/* ── Ricerca ─────────────────────────────────────────────────── */
+.cli-cerca {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.cli-conta { font-size: 12px; color: var(--text2); font-weight: 500; }
+.cli-conta strong { color: var(--text0); font-weight: 700; }
+
+/* ── Impaginazione elenco + scheda ───────────────────────────── */
+.cli-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ── Elenco clienti ──────────────────────────────────────────── */
+.cli-lista {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+.cli-item {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.cli-item:last-child { border-bottom: none; }
+.cli-item:hover { background: var(--bg2); }
+.cli-item.active { background: var(--primaryD); border-left-color: var(--primary); }
+.cli-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.cli-nome {
+  font-size: 12.5px; font-weight: 700; color: var(--text0);
+  line-height: 1.3; margin-bottom: 3px;
+}
+.cli-item.active .cli-nome { color: var(--primary); }
+.cli-sub { font-size: 10.5px; color: var(--text2); font-weight: 500; }
+.cli-tag {
+  display: inline-block; margin-top: 5px;
+  padding: 1px 7px; border-radius: 10px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.cli-tag.rosso { background: var(--redD);   color: var(--red); }
+.cli-tag.ambra { background: var(--amberD); color: #b07d00; }
+.cli-tag.verde { background: var(--greenD); color: var(--green); }
+
+/* ── Testata scheda ──────────────────────────────────────────── */
+.cli-testata {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px;
+}
+.cli-titolo {
+  font-size: 22px; font-weight: 800; color: var(--secondary);
+  letter-spacing: -.02em; line-height: 1.15;
+}
+.cli-sottotitolo {
+  font-size: 11.5px; color: var(--text2); font-weight: 500; margin-top: 3px;
+}
+
+/* ── Sezioni ─────────────────────────────────────────────────── */
+.cli-sez {
+  font-size: 9px; font-weight: 800; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--secondary);
+}
+
+/* ── Giorni alla scadenza ────────────────────────────────────── */
+.cli-gg {
+  display: inline-block; margin-left: 6px;
+  font-size: 9.5px; font-weight: 700; color: var(--text2);
+}
+.cli-gg.rosso { color: var(--red); }
+
+/* ── Avviso incoerenza incassi/rate ──────────────────────────── */
+.cli-avviso {
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--amberD);
+  border: 1px solid var(--amber);
+  border-radius: var(--rs);
+  font-size: 11.5px; color: #7a5c00; line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .cli-layout { grid-template-columns: 1fr; }
+  .cli-lista { position: static; max-height: none; }
+}
+</style>
