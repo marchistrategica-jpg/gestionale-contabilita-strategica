@@ -5,7 +5,7 @@
 // ============================================================
 
 import { db, collections, toTimestamp } from '../firebase-config.js'
-import { formatEuro, formatDate, toInputDate, toast, openModal, closeModal, initModalClose, confirmDelete } from '../utils.js'
+import { formatEuro, formatDate, toInputDate, toast, openModal, closeModal, initModalClose, confirmDelete, righeMovimento } from '../utils.js'
 
 // ---- Stato locale del modulo ----
 let tuttiMovimenti = []   // Cache movimenti Firestore
@@ -291,8 +291,12 @@ function renderIVA() {
   const tabEl = document.getElementById('iva-tabella-body')
   if (!tabEl) return
 
-  // Aliquote IVA comuni in Italia
-  const aliquote = [4, 10, 22]
+  // Aliquote ricavate dai movimenti del periodo, non da una lista fissa:
+  // prima erano hardcoded a [4, 10, 22] e il 5% non compariva mai.
+  const aliquote = [...new Set([
+    ...Object.keys(ivaDebito.perAliquota),
+    ...Object.keys(ivaCredito.perAliquota)
+  ].map(Number))].sort((a, b) => a - b)
 
   // Raggruppa per aliquota
   const righe = aliquote.map(al => {
@@ -359,23 +363,33 @@ function renderIVA() {
   `
 }
 
-// Calcola IVA raggruppata per tipo movimento e aliquota
+/**
+ * Calcola l'IVA raggruppata per aliquota, per tipo di movimento.
+ *
+ * Lavora sulle VOCI, non sul documento: un movimento può contenere più
+ * aliquote (scontrino 22% + 4%), e in quel caso il campo `m.iva_rate` a
+ * livello documento vale null. righeMovimento() normalizza sia i documenti
+ * nuovi (campo `righe`) sia quelli vecchi (una voce sintetizzata).
+ */
 function calcolaIVATipo(movimenti, tipo) {
-  const filtrati = movimenti.filter(m => m.tipo === tipo && m.iva_rate > 0)
+  const filtrati = movimenti.filter(m => m.tipo === tipo)
 
   const perAliquota = {}
   let totale = 0
 
   filtrati.forEach(m => {
-    const al  = Number(m.iva_rate) || 0
-    const iva = Number(m.iva_importo) || 0
-    // Calcola imponibile da importo e aliquota (fallback)
-    const imp = iva > 0 ? (Number(m.importo) - iva) : 0
+    righeMovimento(m).forEach(r => {
+      const al = Number(r.iva_rate) || 0
+      if (al <= 0) return   // 0% / esente: nessuna IVA da liquidare
 
-    if (!perAliquota[al]) perAliquota[al] = { imponibile: 0, iva: 0 }
-    perAliquota[al].imponibile += imp
-    perAliquota[al].iva        += iva
-    totale += iva
+      const iva = Number(r.iva_importo) || 0
+      const imp = Number(r.imponibile)  || 0
+
+      if (!perAliquota[al]) perAliquota[al] = { imponibile: 0, iva: 0 }
+      perAliquota[al].imponibile += imp
+      perAliquota[al].iva        += iva
+      totale += iva
+    })
   })
 
   return { totale, perAliquota }
