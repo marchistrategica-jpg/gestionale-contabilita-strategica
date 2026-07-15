@@ -29,6 +29,11 @@ export const THEME = {
   // Appaiono come voci fisse in fondo alla sidebar
   externalLinks: [
   {
+    label: 'CRM Lead Web',
+    url:   'https://crm-lead-generation-strategica.web.app/dashboard.html',
+    icon:  'external'
+  },
+  {
     label: 'CRM Strategica',
     url:   'https://gianlucamadeddu.github.io/crm-strategica/',
     icon:  'external'
